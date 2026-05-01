@@ -390,6 +390,21 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.scan-control-panel {
+  gap: 16px;
+}
+
+.scan-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.scan-control-grid {
+  align-items: start;
+}
+
 .input-field {
   width: 100%;
   min-height: 44px;
@@ -512,6 +527,18 @@ select {
   border-color: rgba(163, 61, 77, 0.2);
 }
 
+.feedback.success {
+  color: #0d6e67;
+  border-color: rgba(15, 139, 141, 0.22);
+  background: linear-gradient(180deg, rgba(15, 139, 141, 0.09), rgba(255, 250, 241, 0.8));
+}
+
+.feedback.warning {
+  color: #a6551b;
+  border-color: rgba(212, 107, 45, 0.24);
+  background: linear-gradient(180deg, rgba(212, 107, 45, 0.1), rgba(255, 250, 241, 0.8));
+}
+
 .event-stack,
 .timeline-list {
   display: grid;
@@ -613,5 +640,10 @@ select {
 
   .chart-root-tall {
     height: 300px;
+  }
+
+  .scan-control-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

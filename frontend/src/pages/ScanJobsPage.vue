@@ -1,11 +1,25 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 
-import { getScanJobDetail, getScanJobs } from "@/api/client";
+import {
+  ApiError,
+  getDefaultManagementSource,
+  getScanJobDetail,
+  getScanJobs,
+  triggerAuthFileSync,
+} from "@/api/client";
 import StatusPill from "@/components/StatusPill.vue";
 import { formatCount, formatDateTime, formatDurationMs, formatPercent } from "@/lib/format";
-import type { ScanJobDetailResponse, ScanJobListResponse, ScanJobSnapshotSample } from "@/types/api";
+import type {
+  AuthFileSyncConflictDetail,
+  DefaultManagementSourceResponse,
+  ScanJobDetailResponse,
+  ScanJobListResponse,
+  ScanJobSnapshotSample,
+} from "@/types/api";
 
+
+type FeedbackTone = "success" | "warning" | "danger" | "muted";
 
 const pageSize = 20;
 const loading = ref(false);
@@ -16,12 +30,32 @@ const selectedJobId = ref<number | null>(null);
 const detailLoading = ref(false);
 const detailError = ref("");
 const detailResult = ref<ScanJobDetailResponse | null>(null);
+const sourceLoading = ref(false);
+const sourceError = ref("");
+const source = ref<DefaultManagementSourceResponse | null>(null);
+const syncLoading = ref(false);
+const syncFeedback = ref("");
+const syncFeedbackTone = ref<FeedbackTone>("muted");
 let detailRequestToken = 0;
 
 const filters = reactive({
   status: "",
   trigger_mode: "",
 });
+
+async function loadManagementSource() {
+  sourceLoading.value = true;
+  sourceError.value = "";
+
+  try {
+    source.value = await getDefaultManagementSource();
+  } catch (requestError) {
+    source.value = null;
+    sourceError.value = requestError instanceof Error ? requestError.message : "加载管理端配置失败";
+  } finally {
+    sourceLoading.value = false;
+  }
+}
 
 async function loadScanJobs() {
   loading.value = true;
@@ -130,8 +164,135 @@ function quotaSummary(sample: ScanJobSnapshotSample) {
   return `${weekly} / ${short} / ${remaining}`;
 }
 
+function sourceScopeSummary() {
+  if (!source.value) {
+    return "正在等待来源配置...";
+  }
+
+  const segments = [`source_key=${source.value.source_key}`];
+  if (source.value.target_type) {
+    segments.push(`type=${source.value.target_type}`);
+  }
+  if (source.value.provider) {
+    segments.push(`provider=${source.value.provider}`);
+  }
+  if (segments.length === 1) {
+    segments.push("未设置额外筛选");
+  }
+  return segments.join(" / ");
+}
+
+function sourceConfigHint() {
+  if (!source.value || source.value.configured) {
+    return "";
+  }
+  if (source.value.base_url) {
+    return "管理端地址已存在，但当前缺少完整鉴权配置；补齐 backend/.env 中的 AUTHTRACE_MANAGEMENT_TOKEN 后再执行扫描。";
+  }
+  return "当前还未配置管理端地址；请先补齐 backend/.env 中的 AUTHTRACE_MANAGEMENT_BASE_URL 与 AUTHTRACE_MANAGEMENT_TOKEN。";
+}
+
+function clearTaskFilters() {
+  filters.status = "";
+  filters.trigger_mode = "";
+}
+
+function setSyncFeedback(message: string, tone: FeedbackTone) {
+  syncFeedback.value = message;
+  syncFeedbackTone.value = tone;
+}
+
+function feedbackClass(tone: FeedbackTone) {
+  if (tone === "danger") {
+    return "error";
+  }
+  if (tone === "success") {
+    return "success";
+  }
+  if (tone === "warning") {
+    return "warning";
+  }
+  return "";
+}
+
+function isSyncConflictDetail(value: unknown): value is AuthFileSyncConflictDetail {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const runningScanJobId = Reflect.get(value, "running_scan_job_id");
+  const sourceId = Reflect.get(value, "source_id");
+  const message = Reflect.get(value, "message");
+  const scanStartedAt = Reflect.get(value, "scan_started_at");
+
+  return (
+    typeof runningScanJobId === "number" &&
+    typeof sourceId === "number" &&
+    typeof message === "string" &&
+    (typeof scanStartedAt === "string" || scanStartedAt === null)
+  );
+}
+
+async function triggerScan() {
+  if (syncLoading.value) {
+    return;
+  }
+
+  if (!source.value?.configured) {
+    setSyncFeedback(sourceConfigHint() || "管理端配置尚未完成，无法执行扫描。", "warning");
+    return;
+  }
+
+  syncLoading.value = true;
+  setSyncFeedback("", "muted");
+
+  try {
+    const response = await triggerAuthFileSync();
+    const hasFailure = response.status !== "success" || response.failed_snapshots > 0;
+    const feedbackTone: FeedbackTone = hasFailure ? "warning" : "success";
+    setSyncFeedback(
+      `任务 #${response.scan_job_id} 已完成，状态 ${response.status}；成功快照 ${formatCount(response.successful_snapshots)}，失败快照 ${formatCount(response.failed_snapshots)}。`,
+      feedbackTone,
+    );
+
+    clearTaskFilters();
+    offset.value = 0;
+    clearDetailSelection();
+    await loadScanJobs();
+    await toggleDetail(response.scan_job_id);
+  } catch (requestError) {
+    if (requestError instanceof ApiError && isSyncConflictDetail(requestError.detail)) {
+      const startedAtText = requestError.detail.scan_started_at
+        ? formatDateTime(requestError.detail.scan_started_at)
+        : "未知时间";
+      setSyncFeedback(
+        `已有运行中的扫描任务 #${requestError.detail.running_scan_job_id}，开始时间 ${startedAtText}。已为你刷新任务列表，可直接下钻查看。`,
+        "warning",
+      );
+      clearTaskFilters();
+      offset.value = 0;
+      clearDetailSelection();
+      await loadScanJobs();
+      await toggleDetail(requestError.detail.running_scan_job_id);
+      return;
+    }
+
+    if (requestError instanceof ApiError) {
+      setSyncFeedback(requestError.message, requestError.status >= 500 ? "danger" : "warning");
+      if (requestError.status === 503) {
+        await loadManagementSource();
+      }
+      return;
+    }
+
+    setSyncFeedback(requestError instanceof Error ? requestError.message : "触发扫描失败", "danger");
+  } finally {
+    syncLoading.value = false;
+  }
+}
+
 onMounted(() => {
-  void loadScanJobs();
+  void Promise.all([loadManagementSource(), loadScanJobs()]);
 });
 </script>
 
@@ -143,6 +304,53 @@ onMounted(() => {
         <h2>最近几轮执行轨迹</h2>
       </div>
     </div>
+
+    <article class="panel scan-control-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">联调入口</p>
+          <h3>管理端配置与手动扫描</h3>
+        </div>
+        <div class="scan-control-actions">
+          <button class="ghost-button" type="button" :disabled="sourceLoading" @click="loadManagementSource">
+            {{ sourceLoading ? "刷新配置中..." : "刷新配置" }}
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="syncLoading || sourceLoading || !source?.configured"
+            @click="triggerScan"
+          >
+            {{ syncLoading ? "扫描执行中..." : "手动执行一轮扫描" }}
+          </button>
+        </div>
+      </div>
+
+      <p v-if="sourceError" class="feedback error">{{ sourceError }}</p>
+      <p v-else-if="sourceLoading && !source" class="feedback">正在读取管理端配置...</p>
+
+      <template v-else-if="source">
+        <div class="detail-grid scan-control-grid">
+          <div>
+            <p class="subtle-label">管理端来源</p>
+            <p><strong>{{ source.source_name }}</strong></p>
+            <p class="subtle-line">{{ source.base_url || "尚未配置 AUTHTRACE_MANAGEMENT_BASE_URL" }}</p>
+          </div>
+          <div>
+            <p class="subtle-label">配置状态</p>
+            <div class="status-stack">
+              <StatusPill :tone="source.configured ? 'success' : 'warning'" :text="source.configured ? '已配置' : '待补配置'" />
+              <StatusPill :tone="source.is_enabled ? 'success' : 'muted'" :text="source.is_enabled ? '已启用' : '未启用'" />
+            </div>
+            <p class="subtle-line">{{ sourceScopeSummary() }}</p>
+          </div>
+        </div>
+
+        <p v-if="!source.configured" class="feedback warning">{{ sourceConfigHint() }}</p>
+      </template>
+
+      <p v-if="syncFeedback" class="feedback" :class="feedbackClass(syncFeedbackTone)">{{ syncFeedback }}</p>
+    </article>
 
     <form class="filter-bar scan-job-filter-bar" @submit.prevent="offset = 0; clearDetailSelection(); loadScanJobs()">
       <select v-model="filters.status" class="input-field">

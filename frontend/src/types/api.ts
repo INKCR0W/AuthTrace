@@ -48,6 +48,39 @@ export interface DashboardOverviewResponse {
   latest_scan_job: LatestScanJobSummary | null;
 }
 
+export interface DefaultManagementSourceResponse {
+  source_id: number | null;
+  source_key: string;
+  source_name: string;
+  base_url: string | null;
+  configured: boolean;
+  is_enabled: boolean;
+  target_type: string | null;
+  provider: string | null;
+}
+
+export interface AuthFileSyncResponse {
+  scan_job_id: number;
+  source_id: number;
+  source_key: string;
+  status: string;
+  total_accounts: number;
+  synced_accounts: number;
+  eligible_accounts: number;
+  skipped_accounts: number;
+  missing_auth_index_accounts: number;
+  scanned_accounts: number;
+  successful_snapshots: number;
+  failed_snapshots: number;
+}
+
+export interface AuthFileSyncConflictDetail {
+  message: string;
+  running_scan_job_id: number;
+  source_id: number;
+  scan_started_at: string | null;
+}
+
 export interface ScanJobListResponse {
   total: number;
   limit: number;
