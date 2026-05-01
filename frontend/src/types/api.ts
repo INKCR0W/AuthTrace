@@ -150,6 +150,31 @@ export interface AccountCohortUsagePosition {
   short_rank_desc: number | null;
 }
 
+export interface AccountRiskSignal {
+  key: string;
+  label: string;
+  tone: "success" | "warning" | "danger" | "muted";
+  detail: string;
+}
+
+export interface AccountRiskOverview {
+  level: "low" | "medium" | "high" | "critical";
+  headline: string;
+  summary: string;
+  signal_count: number;
+  signals: AccountRiskSignal[];
+}
+
+export interface AccountCohortTrendPoint {
+  bucket_start: string;
+  snapshot_count: number;
+  is_401_count: number;
+  invalid_quota_count: number;
+  failed_count: number;
+  high_weekly_count: number;
+  high_short_count: number;
+}
+
 export interface AccountListResponse {
   total: number;
   limit: number;
@@ -165,6 +190,8 @@ export interface AccountDetailResponse {
   account_type_cohort: AccountCohortBreakdown;
   provider_account_type_cohort: AccountCohortBreakdown;
   cohort_usage_position: AccountCohortUsagePosition;
+  risk_overview: AccountRiskOverview;
+  provider_account_type_trend: AccountCohortTrendPoint[];
 }
 
 export interface EventListItem {

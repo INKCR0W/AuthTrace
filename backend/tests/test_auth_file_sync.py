@@ -751,6 +751,16 @@ def test_account_and_event_query_apis_return_timeline_data() -> None:
     assert detail_payload["provider_account_type_cohort"]["became_401_events_last_24h"] == 1
     assert detail_payload["cohort_usage_position"]["weekly_compared_accounts"] == 0
     assert detail_payload["cohort_usage_position"]["weekly_rank_desc"] is None
+    assert detail_payload["risk_overview"]["level"] == "critical"
+    assert detail_payload["risk_overview"]["signal_count"] == 3
+    assert [signal["key"] for signal in detail_payload["risk_overview"]["signals"]] == [
+        "current_401",
+        "recent_became_401",
+        "peer_group_hot",
+    ]
+    assert len(detail_payload["provider_account_type_trend"]) == 24
+    assert sum(point["snapshot_count"] for point in detail_payload["provider_account_type_trend"]) == 2
+    assert sum(point["is_401_count"] for point in detail_payload["provider_account_type_trend"]) == 1
 
     app.dependency_overrides.clear()
 
@@ -1040,6 +1050,30 @@ def test_account_detail_returns_cohort_research_summary() -> None:
         "short_used_percent": "60.00",
         "short_rank_desc": 1,
     }
+    assert payload["risk_overview"] == {
+        "level": "medium",
+        "headline": "中风险提示：当前账号存在前置信号，建议继续观察同组变化。",
+        "summary": "最近窗口包含 0 条快照，高压 0 次，失败 0 次；同组合近 24 小时新增 401 1 次。",
+        "signal_count": 2,
+        "signals": [
+            {
+                "key": "peer_group_hot",
+                "label": "同组合正在升温",
+                "tone": "danger",
+                "detail": "同 provider + 类型组合当前 401 率 33.33% ，近 24 小时新增 401 1 次。",
+            },
+            {
+                "key": "peer_rank_top",
+                "label": "同组合额度排名靠前",
+                "tone": "warning",
+                "detail": "当前账号周额度排名 1 / 2，短周期排名 1 / 2。",
+            },
+        ],
+    }
+    assert len(payload["provider_account_type_trend"]) == 24
+    assert sum(point["snapshot_count"] for point in payload["provider_account_type_trend"]) == 1
+    assert sum(point["is_401_count"] for point in payload["provider_account_type_trend"]) == 1
+    assert sum(point["invalid_quota_count"] for point in payload["provider_account_type_trend"]) == 1
 
     app.dependency_overrides.clear()
 

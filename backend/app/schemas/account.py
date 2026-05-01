@@ -113,6 +113,37 @@ class AccountCohortUsagePosition(BaseModel):
     short_rank_desc: int | None = None
 
 
+class AccountRiskSignal(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    label: str
+    tone: str
+    detail: str
+
+
+class AccountRiskOverview(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    level: str
+    headline: str
+    summary: str
+    signal_count: int
+    signals: list[AccountRiskSignal] = Field(default_factory=list)
+
+
+class AccountCohortTrendPoint(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    bucket_start: datetime
+    snapshot_count: int
+    is_401_count: int
+    invalid_quota_count: int
+    failed_count: int
+    high_weekly_count: int
+    high_short_count: int
+
+
 class AccountListResponse(BaseModel):
     total: int
     limit: int
@@ -128,3 +159,5 @@ class AccountDetailResponse(BaseModel):
     account_type_cohort: AccountCohortBreakdown
     provider_account_type_cohort: AccountCohortBreakdown
     cohort_usage_position: AccountCohortUsagePosition
+    risk_overview: AccountRiskOverview
+    provider_account_type_trend: list[AccountCohortTrendPoint] = Field(default_factory=list)

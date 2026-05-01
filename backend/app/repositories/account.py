@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.models.account import Account
 from app.models.account_event import AccountEvent
+from app.models.account_snapshot import AccountSnapshot
 
 
 @dataclass(slots=True)
@@ -84,11 +85,41 @@ class AccountCohortUsagePosition:
 
 
 @dataclass(slots=True)
+class AccountRiskSignal:
+    key: str
+    label: str
+    tone: str
+    detail: str
+
+
+@dataclass(slots=True)
+class AccountRiskOverview:
+    level: str
+    headline: str
+    summary: str
+    signal_count: int
+    signals: list[AccountRiskSignal]
+
+
+@dataclass(slots=True)
+class AccountCohortTrendPoint:
+    bucket_start: datetime
+    snapshot_count: int
+    is_401_count: int
+    invalid_quota_count: int
+    failed_count: int
+    high_weekly_count: int
+    high_short_count: int
+
+
+@dataclass(slots=True)
 class AccountResearchSummary:
     provider_cohort: AccountCohortBreakdown
     account_type_cohort: AccountCohortBreakdown
     provider_account_type_cohort: AccountCohortBreakdown
     usage_position: AccountCohortUsagePosition
+    risk_overview: AccountRiskOverview
+    provider_account_type_trend: list[AccountCohortTrendPoint]
 
 
 def list_accounts(
@@ -114,10 +145,28 @@ def get_account_research_summary(
     db: Session,
     *,
     account: Account,
+    snapshots: list[AccountSnapshot],
+    events: list[AccountEvent],
 ) -> AccountResearchSummary:
     last_24h_start = datetime.now(timezone.utc) - timedelta(hours=24)
     provider_label = account.provider or "未标记 provider"
     account_type_label = account.account_type or "未标记类型"
+    provider_account_type_cohort = _build_account_cohort_breakdown(
+        db,
+        label=f"{provider_label} / {account_type_label}",
+        provider=account.provider,
+        account_type=account.account_type,
+        last_24h_start=last_24h_start,
+        match_provider=True,
+        match_account_type=True,
+    )
+    usage_position = _build_usage_position(
+        db,
+        provider=account.provider,
+        account_type=account.account_type,
+        weekly_used_percent=account.current_weekly_used_percent,
+        short_used_percent=account.current_short_used_percent,
+    )
 
     return AccountResearchSummary(
         provider_cohort=_build_account_cohort_breakdown(
@@ -138,21 +187,19 @@ def get_account_research_summary(
             match_provider=False,
             match_account_type=True,
         ),
-        provider_account_type_cohort=_build_account_cohort_breakdown(
-            db,
-            label=f"{provider_label} / {account_type_label}",
-            provider=account.provider,
-            account_type=account.account_type,
-            last_24h_start=last_24h_start,
-            match_provider=True,
-            match_account_type=True,
+        provider_account_type_cohort=provider_account_type_cohort,
+        usage_position=usage_position,
+        risk_overview=_build_risk_overview(
+            account=account,
+            snapshots=snapshots,
+            events=events,
+            provider_account_type_cohort=provider_account_type_cohort,
+            usage_position=usage_position,
         ),
-        usage_position=_build_usage_position(
+        provider_account_type_trend=_build_account_cohort_trend(
             db,
             provider=account.provider,
             account_type=account.account_type,
-            weekly_used_percent=account.current_weekly_used_percent,
-            short_used_percent=account.current_short_used_percent,
         ),
     )
 
@@ -363,6 +410,272 @@ def _build_usage_position(
     )
 
 
+def _build_risk_overview(
+    *,
+    account: Account,
+    snapshots: list[AccountSnapshot],
+    events: list[AccountEvent],
+    provider_account_type_cohort: AccountCohortBreakdown,
+    usage_position: AccountCohortUsagePosition,
+) -> AccountRiskOverview:
+    snapshot_by_id = {snapshot.id: snapshot for snapshot in snapshots}
+    recent_transition_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    latest_became_401 = next(
+        (
+            event
+            for event in events
+            if event.event_type == "became_401" and _ensure_utc(event.event_time) >= recent_transition_cutoff
+        ),
+        None,
+    )
+    failed_snapshots = [snapshot for snapshot in snapshots if snapshot.snapshot_status != "success"]
+    blocked_snapshots = [
+        snapshot
+        for snapshot in snapshots
+        if snapshot.invalid_quota or snapshot.limit_reached is True or snapshot.allowed is False
+    ]
+    high_weekly_snapshots = [
+        snapshot for snapshot in snapshots if _decimal_gte(snapshot.weekly_used_percent, Decimal("80"))
+    ]
+    high_short_snapshots = [
+        snapshot for snapshot in snapshots if _decimal_gte(snapshot.short_used_percent, Decimal("80"))
+    ]
+
+    score = 0
+    signals: list[AccountRiskSignal] = []
+
+    if account.current_is_401:
+        score += 4
+        signals.append(
+            AccountRiskSignal(
+                key="current_401",
+                label="当前已 401",
+                tone="danger",
+                detail="当前账号最新状态已是 401，说明风险已经从预警进入实际故障阶段。",
+            )
+        )
+
+    if latest_became_401 is not None:
+        previous_snapshot = (
+            snapshot_by_id.get(latest_became_401.previous_snapshot_id)
+            if latest_became_401.previous_snapshot_id is not None
+            else None
+        )
+        score += 2
+        detail = f"最近一次进入 401 发生在 {latest_became_401.event_time.isoformat()}。"
+        if previous_snapshot is not None:
+            weekly_text = (
+                str(previous_snapshot.weekly_used_percent)
+                if previous_snapshot.weekly_used_percent is not None
+                else "未记录"
+            )
+            short_text = (
+                str(previous_snapshot.short_used_percent)
+                if previous_snapshot.short_used_percent is not None
+                else "未记录"
+            )
+            detail = (
+                f"最近一次进入 401 之前的快照周额度 {weekly_text}%，"
+                f"短周期 {short_text}%。"
+            )
+        signals.append(
+            AccountRiskSignal(
+                key="recent_became_401",
+                label="最近出现 401 转移",
+                tone="danger",
+                detail=detail,
+            )
+        )
+
+    if account.current_invalid_quota or account.current_limit_reached is True or account.current_allowed is False:
+        score += 2
+        signals.append(
+            AccountRiskSignal(
+                key="current_quota_pressure",
+                label="当前额度受压",
+                tone="warning",
+                detail="当前账号已出现额度异常、达到限制或被判定为不允许继续使用。",
+            )
+        )
+
+    if _decimal_gte(account.current_weekly_used_percent, Decimal("95")) or _decimal_gte(
+        account.current_short_used_percent, Decimal("95")
+    ):
+        score += 2
+        signals.append(
+            AccountRiskSignal(
+                key="current_usage_peak",
+                label="当前额度接近峰值",
+                tone="warning",
+                detail="当前周额度或短周期额度已达到 95% 以上，属于高风险消耗区间。",
+            )
+        )
+    elif high_weekly_snapshots or high_short_snapshots:
+        score += 1
+        signals.append(
+            AccountRiskSignal(
+                key="recent_usage_heat",
+                label="近期多次高压",
+                tone="warning",
+                detail=(
+                    f"最近窗口内周额度高压 {len(high_weekly_snapshots)} 次，"
+                    f"短周期高压 {len(high_short_snapshots)} 次。"
+                ),
+            )
+        )
+
+    if failed_snapshots:
+        score += 1
+        signals.append(
+            AccountRiskSignal(
+                key="probe_failures",
+                label="检测链路不稳定",
+                tone="warning",
+                detail=f"最近窗口内共有 {len(failed_snapshots)} 条非 success 快照，联调时需要同时检查管理端与解析失败路径。",
+            )
+        )
+
+    if blocked_snapshots:
+        score += 1
+        signals.append(
+            AccountRiskSignal(
+                key="blocked_snapshots",
+                label="历史快照出现受限",
+                tone="warning",
+                detail=f"最近窗口内共有 {len(blocked_snapshots)} 条快照出现额度异常、限制命中或 blocked 信号。",
+            )
+        )
+
+    if (
+        provider_account_type_cohort.current_401_rate >= 30
+        or provider_account_type_cohort.became_401_events_last_24h >= 2
+    ):
+        score += 2
+        signals.append(
+            AccountRiskSignal(
+                key="peer_group_hot",
+                label="同组合正在升温",
+                tone="danger",
+                detail=(
+                    f"同 provider + 类型组合当前 401 率 {provider_account_type_cohort.current_401_rate}% ，"
+                    f"近 24 小时新增 401 {provider_account_type_cohort.became_401_events_last_24h} 次。"
+                ),
+            )
+        )
+    elif (
+        provider_account_type_cohort.current_invalid_quota_rate >= 30
+        or provider_account_type_cohort.current_blocked_accounts > 0
+    ):
+        score += 1
+        signals.append(
+            AccountRiskSignal(
+                key="peer_group_pressure",
+                label="同组合存在压力",
+                tone="warning",
+                detail=(
+                    f"同组合当前额度异常率 {provider_account_type_cohort.current_invalid_quota_rate}% ，"
+                    f"受限账号 {provider_account_type_cohort.current_blocked_accounts} 个。"
+                ),
+            )
+        )
+
+    if _is_top_rank(
+        rank=usage_position.weekly_rank_desc,
+        sample_count=usage_position.weekly_compared_accounts,
+    ) or _is_top_rank(
+        rank=usage_position.short_rank_desc,
+        sample_count=usage_position.short_compared_accounts,
+    ):
+        score += 1
+        signals.append(
+            AccountRiskSignal(
+                key="peer_rank_top",
+                label="同组合额度排名靠前",
+                tone="warning",
+                detail=(
+                    f"当前账号周额度排名 {usage_position.weekly_rank_desc or '-'} / {usage_position.weekly_compared_accounts}，"
+                    f"短周期排名 {usage_position.short_rank_desc or '-'} / {usage_position.short_compared_accounts}。"
+                ),
+            )
+        )
+
+    level, headline = _summarize_risk_level(score=score)
+    summary = (
+        f"最近窗口包含 {len(snapshots)} 条快照，"
+        f"高压 {len(high_weekly_snapshots) + len(high_short_snapshots)} 次，"
+        f"失败 {len(failed_snapshots)} 次；"
+        f"同组合近 24 小时新增 401 {provider_account_type_cohort.became_401_events_last_24h} 次。"
+    )
+
+    if not signals:
+        signals.append(
+            AccountRiskSignal(
+                key="stable_window",
+                label="窗口内相对平稳",
+                tone="success",
+                detail="最近窗口内未发现明显 401、额度异常或失败聚集信号。",
+            )
+        )
+
+    return AccountRiskOverview(
+        level=level,
+        headline=headline,
+        summary=summary,
+        signal_count=len(signals),
+        signals=signals,
+    )
+
+
+def _build_account_cohort_trend(
+    db: Session,
+    *,
+    provider: str | None,
+    account_type: str | None,
+) -> list[AccountCohortTrendPoint]:
+    current_bucket = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    bucket_starts = [current_bucket - timedelta(hours=offset) for offset in range(23, -1, -1)]
+    bucket_map = {
+        bucket_start: AccountCohortTrendPoint(
+            bucket_start=bucket_start,
+            snapshot_count=0,
+            is_401_count=0,
+            invalid_quota_count=0,
+            failed_count=0,
+            high_weekly_count=0,
+            high_short_count=0,
+        )
+        for bucket_start in bucket_starts
+    }
+    snapshot_rows = db.scalars(
+        select(AccountSnapshot)
+        .join(Account, Account.id == AccountSnapshot.account_id)
+        .where(
+            Account.source_deleted_at.is_(None),
+            _match_optional_text(Account.provider, provider),
+            _match_optional_text(Account.account_type, account_type),
+            AccountSnapshot.checked_at >= bucket_starts[0],
+        )
+    ).all()
+
+    for snapshot in snapshot_rows:
+        bucket_start = _ensure_utc(snapshot.checked_at).replace(
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        trend_point = bucket_map.get(bucket_start)
+        if trend_point is None:
+            continue
+        trend_point.snapshot_count += 1
+        trend_point.is_401_count += int(snapshot.is_401)
+        trend_point.invalid_quota_count += int(snapshot.invalid_quota)
+        trend_point.failed_count += int(snapshot.snapshot_status != "success")
+        trend_point.high_weekly_count += int(_decimal_gte(snapshot.weekly_used_percent, Decimal("80")))
+        trend_point.high_short_count += int(_decimal_gte(snapshot.short_used_percent, Decimal("80")))
+
+    return [bucket_map[bucket_start] for bucket_start in bucket_starts]
+
+
 def _extract_item_type(item: dict[str, Any]) -> str | None:
     return _normalize_optional_text(item.get("type")) or _normalize_optional_text(item.get("typo"))
 
@@ -437,3 +750,31 @@ def _rank_desc(
         return None
     higher_count = sum(1 for value in values if value > current_value)
     return higher_count + 1
+
+
+def _decimal_gte(value: Decimal | None, threshold: Decimal) -> bool:
+    if value is None:
+        return False
+    return value >= threshold
+
+
+def _is_top_rank(*, rank: int | None, sample_count: int) -> bool:
+    if rank is None or sample_count < 2:
+        return False
+    return rank <= max(1, sample_count // 3)
+
+
+def _summarize_risk_level(*, score: int) -> tuple[str, str]:
+    if score >= 6:
+        return "critical", "高风险提示：当前账号与同组合都出现了明显失稳信号。"
+    if score >= 4:
+        return "high", "高风险提示：当前账号已经出现需要优先关注的连续风险信号。"
+    if score >= 2:
+        return "medium", "中风险提示：当前账号存在前置信号，建议继续观察同组变化。"
+    return "low", "低风险提示：当前窗口内暂无明显升级信号。"
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)

@@ -4,12 +4,14 @@ import { useRoute } from "vue-router";
 
 import { getAccountDetail } from "@/api/client";
 import AccountUsageChart from "@/components/AccountUsageChart.vue";
+import CohortRiskTrendChart from "@/components/CohortRiskTrendChart.vue";
 import StatusPill from "@/components/StatusPill.vue";
 import { formatCount, formatDateTime, formatPercent, formatRemaining, formatStatusCode } from "@/lib/format";
 import type {
   AccountCohortBreakdown,
   AccountDetailResponse,
   AccountEventSummary,
+  AccountRiskSignal,
   AccountSnapshotSummary,
 } from "@/types/api";
 
@@ -23,6 +25,8 @@ const accountId = computed(() => Number(route.params.accountId));
 const recentSnapshots = computed(() => detail.value?.recent_snapshots ?? []);
 const chartSnapshots = computed(() => [...recentSnapshots.value].reverse());
 const snapshotById = computed(() => new Map(recentSnapshots.value.map((snapshot) => [snapshot.id, snapshot])));
+const riskSignals = computed(() => detail.value?.risk_overview.signals ?? []);
+const providerTrendPoints = computed(() => detail.value?.provider_account_type_trend ?? []);
 
 const summaryCards = computed(() => {
   const snapshots = recentSnapshots.value;
@@ -98,60 +102,26 @@ const cohortCards = computed(() => {
 });
 
 const observationNotes = computed(() => {
-  const notes: string[] = [];
-  const latestBecame401 = eventTransitions.value.find((item) => item.event.event_type === "became_401");
-  const failedSnapshots = recentSnapshots.value.filter((snapshot) => snapshot.snapshot_status !== "success");
-  const highWeekly = recentSnapshots.value.filter((snapshot) => toNumber(snapshot.weekly_used_percent) >= 80).length;
-  const highShort = recentSnapshots.value.filter((snapshot) => toNumber(snapshot.short_used_percent) >= 80).length;
-  const providerTypeCohort = detail.value?.provider_account_type_cohort ?? null;
-  const usagePosition = detail.value?.cohort_usage_position ?? null;
+  if (!detail.value) {
+    return [];
+  }
 
-  if (latestBecame401?.previousSnapshot && latestBecame401.relatedSnapshot) {
+  const notes = [
+    detail.value.risk_overview.summary,
+    ...detail.value.risk_overview.signals.map((signal) => `${signal.label}：${signal.detail}`),
+  ];
+
+  const hottestPoint = providerTrendPoints.value.reduce((current, point) => {
+    const currentScore = current ? current.is_401_count + current.invalid_quota_count + current.failed_count : -1;
+    const nextScore = point.is_401_count + point.invalid_quota_count + point.failed_count;
+    return nextScore > currentScore ? point : current;
+  }, providerTrendPoints.value[0]);
+
+  const totalSnapshots = providerTrendPoints.value.reduce((sum, point) => sum + point.snapshot_count, 0);
+  if (hottestPoint && totalSnapshots > 0) {
     notes.push(
-      [
-        `最近一次 401 事件发生在 ${formatDateTime(latestBecame401.event.event_time)}`,
-        `前序快照周额度 ${formatPercent(latestBecame401.previousSnapshot.weekly_used_percent)}`,
-        `短周期 ${formatPercent(latestBecame401.previousSnapshot.short_used_percent)}`,
-        `当前快照状态码 ${formatStatusCode(latestBecame401.relatedSnapshot.probe_status_code)}`,
-      ].join("，"),
+      `同组合近 24 小时最热时段出现在 ${formatDateTime(hottestPoint.bucket_start)}，当时 401 ${hottestPoint.is_401_count} 条、额度异常 ${hottestPoint.invalid_quota_count} 条、失败 ${hottestPoint.failed_count} 条。`,
     );
-  } else if (latestBecame401) {
-    notes.push("最近一次 401 事件在当前快照窗口内缺少完整前序快照，暂时只能确认发生时间，无法直接比较前后额度。");
-  }
-
-  if (highWeekly > 0 || highShort > 0) {
-    notes.push(`最近样本窗口内出现周额度高压 ${highWeekly} 次，短周期高压 ${highShort} 次。`);
-  }
-
-  if (failedSnapshots.length > 0) {
-    notes.push(`当前窗口内有 ${failedSnapshots.length} 条非 success 快照，联调时需要同时关注管理端可用性与解析失败路径。`);
-  }
-
-  if (providerTypeCohort && providerTypeCohort.total_accounts > 0) {
-    notes.push(
-      [
-        `同组合当前共有 ${providerTypeCohort.total_accounts} 个账号`,
-        `当前 401 率 ${formatPercent(providerTypeCohort.current_401_rate)}`,
-        `额度异常率 ${formatPercent(providerTypeCohort.current_invalid_quota_rate)}`,
-        `24h 内新增 401 ${providerTypeCohort.became_401_events_last_24h} 次`,
-      ].join("，"),
-    );
-  }
-
-  if (usagePosition?.weekly_rank_desc && usagePosition.weekly_compared_accounts > 0) {
-    notes.push(
-      `当前账号周额度在同组合中位列第 ${usagePosition.weekly_rank_desc} / ${usagePosition.weekly_compared_accounts} 高，适合结合群体高压分布判断是否属于“个体先抬头”。`,
-    );
-  }
-
-  if (usagePosition?.short_rank_desc && usagePosition.short_compared_accounts > 0) {
-    notes.push(
-      `当前账号短周期额度在同组合中位列第 ${usagePosition.short_rank_desc} / ${usagePosition.short_compared_accounts} 高，可与最近 401 事件一起观察是否存在短时冲顶模式。`,
-    );
-  }
-
-  if (notes.length === 0) {
-    notes.push("最近样本窗口内未发现 401、额度异常或失败快照，当前账号状态相对平稳。");
   }
 
   return notes;
@@ -252,6 +222,31 @@ function usageRankLabel(rank: number | null, sampleCount: number) {
     return "当前组合没有足够样本";
   }
   return `第 ${rank} / ${sampleCount} 高`;
+}
+
+function riskLevelTone(level: string) {
+  if (level === "critical" || level === "high") {
+    return "danger" as const;
+  }
+  if (level === "medium") {
+    return "warning" as const;
+  }
+  return "success" as const;
+}
+
+function riskLevelLabel(level: string) {
+  const labels: Record<string, string> = {
+    low: "低风险",
+    medium: "中风险",
+    high: "高风险",
+    critical: "极高风险",
+  };
+
+  return labels[level] ?? level;
+}
+
+function signalTone(signal: AccountRiskSignal) {
+  return signal.tone;
 }
 </script>
 
@@ -406,6 +401,51 @@ function usageRankLabel(rank: number | null, sampleCount: number) {
           </section>
         </div>
       </article>
+
+      <div class="panel-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">风险</p>
+              <h3>高风险提示</h3>
+            </div>
+            <StatusPill :tone="riskLevelTone(detail.risk_overview.level)" :text="riskLevelLabel(detail.risk_overview.level)" />
+          </div>
+
+          <p class="risk-headline">{{ detail.risk_overview.headline }}</p>
+          <p class="subtle-line">{{ detail.risk_overview.summary }}</p>
+
+          <div class="signal-list">
+            <article
+              v-for="signal in riskSignals"
+              :key="signal.key"
+              class="signal-card"
+              :data-tone="signalTone(signal)"
+            >
+              <div class="event-card-head">
+                <p class="event-title">{{ signal.label }}</p>
+                <StatusPill :tone="signalTone(signal)" :text="signal.label" />
+              </div>
+              <p class="subtle-line">{{ signal.detail }}</p>
+            </article>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">波动</p>
+              <h3>同组近 24 小时轨迹</h3>
+            </div>
+          </div>
+
+          <p class="chart-note">
+            口径为同 provider + 类型组合的小时级快照计数，观察 401、额度异常与高压信号是否同步抬头。
+          </p>
+          <CohortRiskTrendChart v-if="providerTrendPoints.length" :points="providerTrendPoints" />
+          <p v-else class="feedback">当前组合近 24 小时还没有可用于展示的快照。</p>
+        </article>
+      </div>
 
       <div class="panel-grid">
         <article class="panel chart-panel">
