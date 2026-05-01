@@ -139,6 +139,7 @@ class ResearchOverviewFilters:
     provider: str | None = None
     account_type: str | None = None
     current_signal_key: str | None = None
+    pre_401_signal_key: str | None = None
 
 
 def get_research_overview(
@@ -148,6 +149,7 @@ def get_research_overview(
     provider: str | None = None,
     account_type: str | None = None,
     current_signal_key: str | None = None,
+    pre_401_signal_key: str | None = None,
 ) -> ResearchOverview:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=window_days)
@@ -155,6 +157,7 @@ def get_research_overview(
         provider=provider,
         account_type=account_type,
         current_signal_key=current_signal_key,
+        pre_401_signal_key=pre_401_signal_key,
     )
     account_scope_conditions = _build_account_scope_conditions(filters)
 
@@ -169,6 +172,10 @@ def get_research_overview(
             AccountEvent.event_time >= window_start,
         )
     ).all()
+    pre_401_event_rows = _filter_event_rows_by_previous_signal(
+        event_rows,
+        signal_key=filters.pre_401_signal_key,
+    )
 
     active_accounts = int(
         db.scalar(
@@ -220,10 +227,25 @@ def get_research_overview(
             filters=filters,
         ),
         event_hour_distribution=_build_event_hour_distribution(event_rows),
-        pre_401_insights=_build_pre_401_insights(event_rows),
-        recent_event_samples=_build_recent_event_samples(event_rows),
+        pre_401_insights=_build_pre_401_insights(pre_401_event_rows),
+        recent_event_samples=_build_recent_event_samples(pre_401_event_rows),
         current_signal_baseline=_build_current_signal_baseline(db, filters=filters),
     )
+
+
+def _filter_event_rows_by_previous_signal(
+    event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
+    *,
+    signal_key: str | None,
+) -> list[tuple[AccountEvent, Account, AccountSnapshot | None]]:
+    if signal_key is None:
+        return event_rows
+
+    return [
+        row
+        for row in event_rows
+        if row[2] is not None and signal_key in _extract_snapshot_signal_keys(row[2])
+    ]
 
 
 def _build_provider_account_type_breakdown(

@@ -34,6 +34,7 @@ const filters = reactive({
   provider: "",
   accountType: "",
   currentSignalKey: "",
+  pre401SignalKey: "",
 });
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
@@ -53,14 +54,27 @@ const shortBandValues = computed(
 const normalizedProvider = computed(() => filters.provider.trim());
 const normalizedAccountType = computed(() => filters.accountType.trim());
 const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim());
+const normalizedPre401SignalKey = computed(() => filters.pre401SignalKey.trim());
 const selectedCurrentSignalLabel = computed(() => {
   if (!normalizedCurrentSignalKey.value) {
     return "";
   }
   return currentSignalLabelMap[normalizedCurrentSignalKey.value] ?? normalizedCurrentSignalKey.value;
 });
+const selectedPre401SignalLabel = computed(() => {
+  if (!normalizedPre401SignalKey.value) {
+    return "";
+  }
+  return currentSignalLabelMap[normalizedPre401SignalKey.value] ?? normalizedPre401SignalKey.value;
+});
 const hasScopedFilters = computed(
-  () => Boolean(normalizedProvider.value || normalizedAccountType.value || normalizedCurrentSignalKey.value),
+  () =>
+    Boolean(
+      normalizedProvider.value ||
+        normalizedAccountType.value ||
+        normalizedCurrentSignalKey.value ||
+        normalizedPre401SignalKey.value,
+    ),
 );
 const scopeSummary = computed(() => {
   const segments: string[] = [];
@@ -73,6 +87,9 @@ const scopeSummary = computed(() => {
   }
   if (selectedCurrentSignalLabel.value) {
     segments.push(`当前信号=${selectedCurrentSignalLabel.value}`);
+  }
+  if (selectedPre401SignalLabel.value) {
+    segments.push(`前序信号=${selectedPre401SignalLabel.value}`);
   }
 
   return segments.length ? segments.join(" / ") : "全部账号";
@@ -107,6 +124,7 @@ async function loadOverview() {
       provider: normalizedProvider.value || undefined,
       account_type: normalizedAccountType.value || undefined,
       current_signal_key: normalizedCurrentSignalKey.value || undefined,
+      pre_401_signal_key: normalizedPre401SignalKey.value || undefined,
     });
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : "加载研究数据失败";
@@ -119,6 +137,7 @@ function resetFilters() {
   filters.provider = "";
   filters.accountType = "";
   filters.currentSignalKey = "";
+  filters.pre401SignalKey = "";
   void loadOverview();
 }
 
@@ -212,6 +231,15 @@ onMounted(() => {
           </select>
         </label>
         <label>
+          <span class="subtle-label">前序信号</span>
+          <select v-model="filters.pre401SignalKey" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部信号</option>
+            <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="`pre-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">窗口</span>
           <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
             <option :value="7">最近 7 天</option>
@@ -227,6 +255,9 @@ onMounted(() => {
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
     <p v-if="selectedCurrentSignalLabel" class="subtle-line">
       “当前信号”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
+    </p>
+    <p v-if="selectedPre401SignalLabel" class="subtle-line">
+      “前序信号”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>

@@ -29,11 +29,17 @@ def get_research_overview_api(
     provider: str | None = Query(default=None),
     account_type: str | None = Query(default=None),
     current_signal_key: str | None = Query(default=None),
+    pre_401_signal_key: str | None = Query(default=None),
 ) -> ResearchOverviewResponse:
     if current_signal_key is not None and current_signal_key not in RESEARCH_SIGNAL_KEYS:
         raise HTTPException(
             status_code=422,
             detail=f"Unsupported current_signal_key: {current_signal_key}",
+        )
+    if pre_401_signal_key is not None and pre_401_signal_key not in RESEARCH_SIGNAL_KEYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported pre_401_signal_key: {pre_401_signal_key}",
         )
 
     overview = get_research_overview(
@@ -42,6 +48,7 @@ def get_research_overview_api(
         provider=provider,
         account_type=account_type,
         current_signal_key=current_signal_key,
+        pre_401_signal_key=pre_401_signal_key,
     )
     return ResearchOverviewResponse(
         window_days=overview.window_days,
