@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+import asyncio
+
+import httpx
+
+from app.main import app
+
+
+async def _get(path: str) -> httpx.Response:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        return await client.get(path)
+
+
+def test_root_health() -> None:
+    response = asyncio.run(_get("/health"))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_api_health() -> None:
+    response = asyncio.run(_get("/api/v1/health"))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"

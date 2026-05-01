@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: authtrace-postgres
+    environment:
+      POSTGRES_DB: authtrace
+      POSTGRES_USER: authtrace
+      POSTGRES_PASSWORD: authtrace
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authtrace -d authtrace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
