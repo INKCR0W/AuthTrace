@@ -93,6 +93,28 @@ export interface ResearchPre401Insights {
   top_status_messages: ResearchBucketCount[];
 }
 
+export interface ResearchCurrentSignalSample {
+  account_id: number;
+  account_name: string;
+  provider: string | null;
+  account_type: string | null;
+  current_last_checked_at: string | null;
+  current_weekly_used_percent: string | null;
+  current_short_used_percent: string | null;
+  current_remaining: string | null;
+  current_limit_reached: boolean | null;
+  current_allowed: boolean | null;
+  status_message_excerpt: string | null;
+  signal_labels: string[];
+}
+
+export interface ResearchCurrentSignalBaseline {
+  observed_accounts: number;
+  signal_accounts: number;
+  signal_breakdown: ResearchBucketCount[];
+  recent_samples: ResearchCurrentSignalSample[];
+}
+
 export interface ResearchOverviewResponse {
   window_days: number;
   summary: ResearchOverviewSummary;
@@ -100,6 +122,7 @@ export interface ResearchOverviewResponse {
   event_hour_distribution: ResearchHourlyDistributionPoint[];
   pre_401_insights: ResearchPre401Insights;
   recent_event_samples: ResearchEventSample[];
+  current_signal_baseline: ResearchCurrentSignalBaseline;
 }
 
 export interface ResearchEventSample {

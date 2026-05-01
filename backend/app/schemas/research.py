@@ -77,6 +77,30 @@ class ResearchEventSample(BaseModel):
     previous_status_message: str | None = None
 
 
+class ResearchCurrentSignalSample(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: int
+    account_name: str
+    provider: str | None = None
+    account_type: str | None = None
+    current_last_checked_at: datetime | None = None
+    current_weekly_used_percent: Decimal | None = None
+    current_short_used_percent: Decimal | None = None
+    current_remaining: Decimal | None = None
+    current_limit_reached: bool | None = None
+    current_allowed: bool | None = None
+    status_message_excerpt: str | None = None
+    signal_labels: list[str] = Field(default_factory=list)
+
+
+class ResearchCurrentSignalBaseline(BaseModel):
+    observed_accounts: int
+    signal_accounts: int
+    signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)
+
+
 class ResearchOverviewResponse(BaseModel):
     window_days: int
     summary: ResearchOverviewSummary
@@ -84,3 +108,4 @@ class ResearchOverviewResponse(BaseModel):
     event_hour_distribution: list[ResearchHourlyDistributionPoint] = Field(default_factory=list)
     pre_401_insights: ResearchPre401Insights
     recent_event_samples: list[ResearchEventSample] = Field(default_factory=list)
+    current_signal_baseline: ResearchCurrentSignalBaseline

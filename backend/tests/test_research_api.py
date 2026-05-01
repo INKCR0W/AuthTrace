@@ -341,5 +341,147 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "previous_status_message": "soft_block",
     }
     assert recent_samples[2]["previous_status_message"] == "warmup"
+    assert payload["current_signal_baseline"] == {
+        "observed_accounts": 1,
+        "signal_accounts": 0,
+        "signal_breakdown": [],
+        "recent_samples": [],
+    }
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_returns_current_signal_baseline_without_401_events() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        observed_signal = Account(
+            source_id=source.id,
+            auth_index="auth-signal",
+            name="Signal-Account",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("97.00"),
+            current_remaining=Decimal("3.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="usage limit reached on current window",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=3),
+            last_seen_at=base_time,
+        )
+        observed_normal = Account(
+            source_id=source.id,
+            auth_index="auth-normal",
+            name="Normal-Account",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=3),
+            last_seen_at=base_time,
+        )
+        ignored_disabled = Account(
+            source_id=source.id,
+            auth_index="auth-disabled",
+            name="Disabled-Account",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=True,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("99.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=3),
+            last_seen_at=base_time,
+        )
+        ignored_401 = Account(
+            source_id=source.id,
+            auth_index="auth-401",
+            name="Hot-Account",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_weekly_used_percent=Decimal("100.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=3),
+            last_seen_at=base_time,
+        )
+        db.add_all([observed_signal, observed_normal, ignored_disabled, ignored_401])
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["became_401_events"] == 0
+    assert payload["recent_event_samples"] == []
+    baseline = payload["current_signal_baseline"]
+    assert baseline["observed_accounts"] == 2
+    assert baseline["signal_accounts"] == 1
+    assert {item["key"]: item["count"] for item in baseline["signal_breakdown"]} == {
+        "weekly_ge_90": 1,
+        "limit_reached": 1,
+        "allowed_false": 1,
+        "status_message_present": 1,
+    }
+    assert baseline["recent_samples"] == [
+        {
+            "account_id": 1,
+            "account_name": "Signal-Account",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "current_last_checked_at": "2026-05-02T12:00:00Z",
+            "current_weekly_used_percent": "97.00",
+            "current_short_used_percent": None,
+            "current_remaining": "3.00",
+            "current_limit_reached": True,
+            "current_allowed": False,
+            "status_message_excerpt": "usage limit reached on current window",
+            "signal_labels": [
+                "周额度 >= 90%",
+                "limit_reached=true",
+                "allowed=false",
+                "存在 status_message",
+            ],
+        }
+    ]
 
     app.dependency_overrides.clear()

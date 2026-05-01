@@ -81,6 +81,30 @@ class ResearchEventSample:
 
 
 @dataclass(slots=True)
+class ResearchCurrentSignalSample:
+    account_id: int
+    account_name: str
+    provider: str | None
+    account_type: str | None
+    current_last_checked_at: datetime | None
+    current_weekly_used_percent: Decimal | None
+    current_short_used_percent: Decimal | None
+    current_remaining: Decimal | None
+    current_limit_reached: bool | None
+    current_allowed: bool | None
+    status_message_excerpt: str | None
+    signal_labels: list[str]
+
+
+@dataclass(slots=True)
+class ResearchCurrentSignalBaseline:
+    observed_accounts: int
+    signal_accounts: int
+    signal_breakdown: list[ResearchBucketCount]
+    recent_samples: list[ResearchCurrentSignalSample]
+
+
+@dataclass(slots=True)
 class ResearchOverview:
     window_days: int
     summary: ResearchOverviewSummary
@@ -88,6 +112,7 @@ class ResearchOverview:
     event_hour_distribution: list[ResearchHourlyDistributionPoint]
     pre_401_insights: ResearchPre401Insights
     recent_event_samples: list[ResearchEventSample]
+    current_signal_baseline: ResearchCurrentSignalBaseline
 
 
 def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverview:
@@ -157,6 +182,7 @@ def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverv
         event_hour_distribution=_build_event_hour_distribution(event_rows),
         pre_401_insights=_build_pre_401_insights(event_rows),
         recent_event_samples=_build_recent_event_samples(event_rows),
+        current_signal_baseline=_build_current_signal_baseline(db),
     )
 
 
@@ -329,6 +355,65 @@ def _build_recent_event_samples(
     )[:10]
 
 
+def _build_current_signal_baseline(db: Session) -> ResearchCurrentSignalBaseline:
+    account_rows = list(
+        db.scalars(
+            select(Account).where(
+                Account.source_deleted_at.is_(None),
+                Account.disabled.is_(False),
+                Account.current_is_401.is_(False),
+            )
+        )
+    )
+
+    signal_counter = Counter[str]()
+    samples: list[ResearchCurrentSignalSample] = []
+
+    for account in account_rows:
+        signal_keys = _extract_account_signal_keys(account)
+        if not signal_keys:
+            continue
+
+        signal_counter.update(signal_keys)
+        samples.append(
+            ResearchCurrentSignalSample(
+                account_id=account.id,
+                account_name=account.name,
+                provider=account.provider,
+                account_type=account.account_type,
+                current_last_checked_at=(
+                    _ensure_utc(account.current_last_checked_at)
+                    if account.current_last_checked_at is not None
+                    else None
+                ),
+                current_weekly_used_percent=account.current_weekly_used_percent,
+                current_short_used_percent=account.current_short_used_percent,
+                current_remaining=account.current_remaining,
+                current_limit_reached=account.current_limit_reached,
+                current_allowed=account.current_allowed,
+                status_message_excerpt=_build_status_message_excerpt(account.status_message),
+                signal_labels=[_SIGNAL_LABELS[key] for key in signal_keys],
+            )
+        )
+
+    samples.sort(
+        key=lambda item: (
+            -len(item.signal_labels),
+            -(item.current_weekly_used_percent or Decimal("-1")),
+            -(item.current_short_used_percent or Decimal("-1")),
+            -_datetime_to_timestamp(item.current_last_checked_at),
+            item.account_name,
+        )
+    )
+
+    return ResearchCurrentSignalBaseline(
+        observed_accounts=len(account_rows),
+        signal_accounts=len(samples),
+        signal_breakdown=_build_signal_breakdown(signal_counter),
+        recent_samples=samples[:10],
+    )
+
+
 def _build_percent_band_counts(counter: Counter[str]) -> list[ResearchBucketCount]:
     bands = [
         ("0_24", "0-24%", counter.get("0_24", 0)),
@@ -342,18 +427,10 @@ def _build_percent_band_counts(counter: Counter[str]) -> list[ResearchBucketCoun
 
 
 def _build_signal_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
-    labels = {
-        "weekly_ge_90": "周额度 >= 90%",
-        "short_ge_90": "短周期 >= 90%",
-        "limit_reached": "limit_reached=true",
-        "allowed_false": "allowed=false",
-        "remaining_empty": "remaining <= 0",
-        "status_message_present": "存在 status_message",
-    }
     items = [
-        ResearchBucketCount(key=key, label=labels[key], count=count)
+        ResearchBucketCount(key=key, label=_SIGNAL_LABELS[key], count=count)
         for key, count in counter.items()
-        if count > 0 and key in labels
+        if count > 0 and key in _SIGNAL_LABELS
     ]
     return sorted(items, key=lambda item: (-item.count, item.label))
 
@@ -364,6 +441,47 @@ def _build_top_status_messages(counter: Counter[str]) -> list[ResearchBucketCoun
         for message, count in counter.items()
     ]
     return sorted(items, key=lambda item: (-item.count, item.label))[:5]
+
+
+_SIGNAL_LABELS = {
+    "weekly_ge_90": "周额度 >= 90%",
+    "short_ge_90": "短周期 >= 90%",
+    "limit_reached": "limit_reached=true",
+    "allowed_false": "allowed=false",
+    "remaining_empty": "remaining <= 0",
+    "status_message_present": "存在 status_message",
+}
+
+
+def _extract_account_signal_keys(account: Account) -> list[str]:
+    signal_keys: list[str] = []
+
+    if _decimal_gte(account.current_weekly_used_percent, Decimal("90")):
+        signal_keys.append("weekly_ge_90")
+    if _decimal_gte(account.current_short_used_percent, Decimal("90")):
+        signal_keys.append("short_ge_90")
+    if account.current_limit_reached is True:
+        signal_keys.append("limit_reached")
+    if account.current_allowed is False:
+        signal_keys.append("allowed_false")
+    if account.current_remaining is not None and account.current_remaining <= 0:
+        signal_keys.append("remaining_empty")
+    if (account.status_message or "").strip():
+        signal_keys.append("status_message_present")
+
+    return signal_keys
+
+
+def _build_status_message_excerpt(value: str | None, *, limit: int = 120) -> str | None:
+    if value is None:
+        return None
+
+    normalized = " ".join(value.split())
+    if not normalized:
+        return None
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 1].rstrip() + "…"
 
 
 def _bucket_percent(value: Decimal | None) -> str:
@@ -402,3 +520,9 @@ def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _datetime_to_timestamp(value: datetime | None) -> float:
+    if value is None:
+        return float("-inf")
+    return value.timestamp()

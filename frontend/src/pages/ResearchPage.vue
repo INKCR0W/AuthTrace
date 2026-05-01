@@ -7,7 +7,12 @@ import DistributionBarChart from "@/components/DistributionBarChart.vue";
 import MetricCard from "@/components/MetricCard.vue";
 import StatusPill from "@/components/StatusPill.vue";
 import { formatCount, formatDateTime, formatPercent, formatRemaining } from "@/lib/format";
-import type { ResearchBucketCount, ResearchEventSample, ResearchOverviewResponse } from "@/types/api";
+import type {
+  ResearchBucketCount,
+  ResearchCurrentSignalSample,
+  ResearchEventSample,
+  ResearchOverviewResponse,
+} from "@/types/api";
 
 
 const loading = ref(false);
@@ -75,6 +80,14 @@ function sampleSignalSummary(item: ResearchEventSample) {
   return signals.join(" / ");
 }
 
+function currentSignalUsageSummary(item: ResearchCurrentSignalSample) {
+  return [
+    `周额度 ${formatPercent(item.current_weekly_used_percent)}`,
+    `短周期 ${formatPercent(item.current_short_used_percent)}`,
+    `remaining ${formatRemaining(item.current_remaining)}`,
+  ].join(" / ");
+}
+
 onMounted(() => {
   void loadOverview();
 });
@@ -111,7 +124,16 @@ onMounted(() => {
         <MetricCard label="当前 401 率" :value="formatPercent(overview.summary.current_401_rate)" accent="teal" />
         <MetricCard label="活跃账号" :value="formatCount(overview.summary.active_accounts)" />
         <MetricCard label="可回放前序样本" :value="formatCount(overview.summary.sampled_previous_snapshots)" hint="存在 previous snapshot" />
+        <MetricCard
+          label="当前研究信号账号"
+          :value="formatCount(overview.current_signal_baseline.signal_accounts)"
+          hint="当前非 401 且仍可继续观察"
+        />
       </div>
+
+      <p v-if="overview.summary.became_401_events === 0" class="feedback">
+        当前历史库里还没有 `became_401` 事件。下面展示的是仍为非 `401` 账号的研究信号基线，只用于后续样本积累，不代表账号异常。
+      </p>
 
       <div class="panel-grid">
         <article class="panel chart-panel">
@@ -172,6 +194,39 @@ onMounted(() => {
             </p>
           </div>
           <p v-else class="feedback">当前窗口内，前序正常样本没有留下稳定的 `status_message`。</p>
+        </article>
+      </div>
+
+      <div class="panel-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">当前基线</p>
+              <h3>仍正常账号里已经出现了哪些研究信号</h3>
+            </div>
+          </div>
+
+          <div class="detail-list">
+            <div class="detail-row">
+              <span>当前可观测账号</span>
+              <strong>{{ formatCount(overview.current_signal_baseline.observed_accounts) }}</strong>
+            </div>
+            <div class="detail-row">
+              <span>出现研究信号的账号</span>
+              <strong>{{ formatCount(overview.current_signal_baseline.signal_accounts) }}</strong>
+            </div>
+          </div>
+
+          <div v-if="overview.current_signal_baseline.signal_breakdown.length" class="signal-chip-grid">
+            <div
+              v-for="item in overview.current_signal_baseline.signal_breakdown"
+              :key="item.key"
+              class="signal-chip"
+            >
+              {{ bucketSummary(item) }}
+            </div>
+          </div>
+          <p v-else class="feedback">当前仍为非 `401` 的账号里，还没有留下需要继续跟踪的研究信号。</p>
         </article>
       </div>
 
@@ -292,6 +347,63 @@ onMounted(() => {
           </article>
         </div>
         <p v-else class="feedback">当前窗口内还没有最近 401 样本可回放。</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">当前样本</p>
+            <h3>仍正常但值得持续观察的账号</h3>
+          </div>
+        </div>
+
+        <div v-if="overview.current_signal_baseline.recent_samples.length" class="event-stack">
+          <article
+            v-for="sample in overview.current_signal_baseline.recent_samples"
+            :key="sample.account_id"
+            class="event-card"
+          >
+            <div class="event-card-head">
+              <div>
+                <p class="event-type">current_signal</p>
+                <RouterLink class="inline-link event-title" :to="`/accounts/${sample.account_id}`">
+                  {{ sample.account_name }}
+                </RouterLink>
+                <p class="subtle-line">
+                  {{ sample.provider ?? "未标记 provider" }} / {{ sample.account_type ?? "未标记类型" }}
+                </p>
+              </div>
+              <div class="status-stack">
+                <StatusPill tone="success" text="当前非 401" />
+                <p class="subtle-line">最近检测：{{ formatDateTime(sample.current_last_checked_at) }}</p>
+              </div>
+            </div>
+
+            <div class="event-grid">
+              <div>
+                <p class="subtle-label">当前额度/余量</p>
+                <p>{{ currentSignalUsageSummary(sample) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">已观测信号</p>
+                <div class="signal-chip-grid">
+                  <div
+                    v-for="label in sample.signal_labels"
+                    :key="`${sample.account_id}-${label}`"
+                    class="signal-chip"
+                  >
+                    {{ label }}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p class="subtle-label">status_message 摘要</p>
+                <p>{{ sample.status_message_excerpt ?? "未记录" }}</p>
+              </div>
+            </div>
+          </article>
+        </div>
+        <p v-else class="feedback">当前没有需要额外追踪的非 `401` 研究样本。</p>
       </article>
     </template>
   </section>

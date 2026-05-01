@@ -8,6 +8,8 @@ from app.repositories.research import get_research_overview
 from app.schemas.research import (
     ResearchBucketCount,
     ResearchCombinationBreakdownItem,
+    ResearchCurrentSignalBaseline,
+    ResearchCurrentSignalSample,
     ResearchEventSample,
     ResearchHourlyDistributionPoint,
     ResearchOverviewResponse,
@@ -60,4 +62,16 @@ def get_research_overview_api(
             ResearchEventSample.model_validate(item)
             for item in overview.recent_event_samples
         ],
+        current_signal_baseline=ResearchCurrentSignalBaseline(
+            observed_accounts=overview.current_signal_baseline.observed_accounts,
+            signal_accounts=overview.current_signal_baseline.signal_accounts,
+            signal_breakdown=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.current_signal_baseline.signal_breakdown
+            ],
+            recent_samples=[
+                ResearchCurrentSignalSample.model_validate(item)
+                for item in overview.current_signal_baseline.recent_samples
+            ],
+        ),
     )
