@@ -38,6 +38,23 @@ def create_scan_job(
     return scan_job
 
 
+def get_running_scan_job(
+    db: Session,
+    *,
+    source_id: int,
+) -> ScanJob | None:
+    statement = (
+        select(ScanJob)
+        .where(
+            ScanJob.source_id == source_id,
+            ScanJob.status == "running",
+        )
+        .order_by(ScanJob.scan_started_at.desc(), ScanJob.id.desc())
+        .limit(1)
+    )
+    return db.scalar(statement)
+
+
 def list_scan_jobs(
     db: Session,
     *,

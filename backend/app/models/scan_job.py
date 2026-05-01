@@ -13,6 +13,13 @@ class ScanJob(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_scan_jobs_source_id_scan_started_at", "source_id", "scan_started_at"),
         Index("ix_scan_jobs_status_scan_started_at", "status", "scan_started_at"),
+        Index(
+            "uq_scan_jobs_source_id_running",
+            "source_id",
+            unique=True,
+            sqlite_where=text("status = 'running'"),
+            postgresql_where=text("status = 'running'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

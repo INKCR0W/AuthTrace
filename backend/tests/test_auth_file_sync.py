@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import httpx
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -250,6 +252,134 @@ def test_sync_auth_files_persists_accounts_and_scan_job() -> None:
         assert snapshots[0].snapshot_status == "success"
         assert snapshots[0].probe_status_code == 200
         assert snapshots[0].raw_usage_json is not None
+
+    app.dependency_overrides.clear()
+
+
+def test_sync_auth_files_rejects_when_running_scan_job_exists() -> None:
+    session_factory = _create_session_factory()
+    fake_client = FakeManagementClient(auth_files=[])
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+    app.dependency_overrides[get_management_client] = lambda: fake_client
+
+    with session_factory() as db:
+        started_at = datetime.now(timezone.utc).replace(microsecond=0)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            ScanJob(
+                source_id=source.id,
+                trigger_mode="scheduler",
+                status="running",
+                scan_started_at=started_at,
+            )
+        )
+        db.commit()
+
+    response = asyncio.run(_request("POST", "/api/v1/sync/auth-files", json={"trigger_mode": "manual"}))
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["detail"]["message"] == "当前已有进行中的扫描任务"
+    assert payload["detail"]["running_scan_job_id"] == 1
+    assert payload["detail"]["source_id"] == 1
+    assert payload["detail"]["scan_started_at"].startswith(started_at.strftime("%Y-%m-%dT%H:%M:%S"))
+    assert fake_client.refresh_called is False
+    assert fake_client.probe_calls == []
+
+    with session_factory() as db:
+        scan_jobs = db.scalars(select(ScanJob).order_by(ScanJob.id)).all()
+        assert len(scan_jobs) == 1
+        assert scan_jobs[0].status == "running"
+
+    app.dependency_overrides.clear()
+
+
+def test_sync_auth_files_returns_conflict_when_running_job_is_created_concurrently() -> None:
+    session_factory = _create_session_factory()
+    fake_client = FakeManagementClient(auth_files=[])
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+    app.dependency_overrides[get_management_client] = lambda: fake_client
+
+    with session_factory() as db:
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.commit()
+
+    conflicting_started_at = datetime.now(timezone.utc).replace(microsecond=0)
+
+    def raise_conflict(*args: object, **kwargs: object) -> None:
+        with session_factory() as db:
+            source = db.scalar(select(ManagementSource).where(ManagementSource.source_key == settings.management_source_key))
+            assert source is not None
+            db.add(
+                ScanJob(
+                    source_id=source.id,
+                    trigger_mode="scheduler",
+                    status="running",
+                    scan_started_at=conflicting_started_at,
+                )
+            )
+            db.commit()
+        raise IntegrityError("insert into scan_jobs", {}, RuntimeError("duplicate running job"))
+
+    with patch("app.services.auth_file_sync.create_scan_job", side_effect=raise_conflict):
+        response = asyncio.run(_request("POST", "/api/v1/sync/auth-files", json={"trigger_mode": "manual"}))
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["detail"]["message"] == "当前已有进行中的扫描任务"
+    assert payload["detail"]["running_scan_job_id"] == 1
+    assert payload["detail"]["source_id"] == 1
+    assert payload["detail"]["scan_started_at"].startswith(conflicting_started_at.strftime("%Y-%m-%dT%H:%M:%S"))
+    assert fake_client.refresh_called is False
+    assert fake_client.probe_calls == []
+
+    with session_factory() as db:
+        scan_jobs = db.scalars(select(ScanJob).order_by(ScanJob.id)).all()
+        assert len(scan_jobs) == 1
+        assert scan_jobs[0].status == "running"
 
     app.dependency_overrides.clear()
 

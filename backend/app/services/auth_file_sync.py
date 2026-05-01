@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.clients.management import ManagementApiClient
@@ -17,7 +18,7 @@ from app.models.scan_job import ScanJob
 from app.repositories.account_snapshot import get_latest_snapshot_for_account
 from app.repositories.account import AuthFileSyncResult, SyncedAuthFile, sync_accounts_from_auth_files
 from app.repositories.management_source import ensure_default_management_source
-from app.repositories.scan_job import create_scan_job
+from app.repositories.scan_job import create_scan_job, get_running_scan_job
 from app.schemas.sync import AuthFileSyncResponse
 from app.services.usage_probe import UsageProbeParseResult, parse_usage_probe_response
 
@@ -31,6 +32,14 @@ class UsageScanStats:
     new_quota_events: int
 
 
+class ScanJobAlreadyRunningError(RuntimeError):
+    def __init__(self, scan_job: ScanJob) -> None:
+        super().__init__("scan job already running")
+        self.scan_job_id = scan_job.id
+        self.source_id = scan_job.source_id
+        self.scan_started_at = scan_job.scan_started_at
+
+
 async def run_auth_file_sync(
     db: Session,
     *,
@@ -39,15 +48,27 @@ async def run_auth_file_sync(
     trigger_mode: str = "manual",
 ) -> AuthFileSyncResponse:
     source = ensure_default_management_source(db, settings)
+    running_scan_job = get_running_scan_job(db, source_id=source.id)
+    if running_scan_job is not None:
+        raise ScanJobAlreadyRunningError(running_scan_job)
+
     started_at = _utcnow()
-    scan_job = create_scan_job(
-        db,
-        source_id=source.id,
-        trigger_mode=trigger_mode,
-        started_at=started_at,
-    )
+    try:
+        scan_job = create_scan_job(
+            db,
+            source_id=source.id,
+            trigger_mode=trigger_mode,
+            started_at=started_at,
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        running_scan_job = get_running_scan_job(db, source_id=source.id)
+        if running_scan_job is not None:
+            raise ScanJobAlreadyRunningError(running_scan_job) from exc
+        raise
+
     scan_job_id = scan_job.id
-    db.commit()
 
     try:
         await client.refresh_config()
