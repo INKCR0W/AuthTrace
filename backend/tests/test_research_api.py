@@ -345,6 +345,8 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "observed_accounts": 1,
         "signal_accounts": 0,
         "signal_breakdown": [],
+        "signal_pattern_breakdown": [],
+        "top_status_messages": [],
         "recent_samples": [],
     }
 
@@ -620,6 +622,8 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "observed_accounts": 1,
         "signal_accounts": 0,
         "signal_breakdown": [],
+        "signal_pattern_breakdown": [],
+        "top_status_messages": [],
         "recent_samples": [],
     }
 
@@ -669,7 +673,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             current_remaining=Decimal("3.00"),
             current_limit_reached=True,
             current_allowed=False,
-            status_message="usage limit reached on current window",
+            status_message='{"error":{"type":"usage_limit_reached","message":"usage limit reached on current window"}}',
             current_last_checked_at=base_time,
             first_seen_at=base_time - timedelta(days=3),
             last_seen_at=base_time,
@@ -737,6 +741,20 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
         "allowed_false": 1,
         "status_message_present": 1,
     }
+    assert baseline["signal_pattern_breakdown"] == [
+        {
+            "key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
+            "label": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "count": 1,
+        }
+    ]
+    assert baseline["top_status_messages"] == [
+        {
+            "key": "usage_limit_reached: usage limit reached on current window",
+            "label": "usage_limit_reached: usage limit reached on current window",
+            "count": 1,
+        }
+    ]
     assert baseline["recent_samples"] == [
         {
             "account_id": 1,
@@ -749,7 +767,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "current_remaining": "3.00",
             "current_limit_reached": True,
             "current_allowed": False,
-            "status_message_excerpt": "usage limit reached on current window",
+            "status_message_excerpt": "usage_limit_reached: usage limit reached on current window",
             "signal_labels": [
                 "周额度 >= 90%",
                 "limit_reached=true",
@@ -868,6 +886,20 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
         "status_message_present": 1,
         "weekly_ge_90": 1,
     }
+    assert baseline["signal_pattern_breakdown"] == [
+        {
+            "key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
+            "label": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "count": 1,
+        }
+    ]
+    assert baseline["top_status_messages"] == [
+        {
+            "key": "busy window",
+            "label": "busy window",
+            "count": 1,
+        }
+    ]
     assert baseline["recent_samples"] == [
         {
             "account_id": 2,

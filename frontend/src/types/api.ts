@@ -112,6 +112,8 @@ export interface ResearchCurrentSignalBaseline {
   observed_accounts: number;
   signal_accounts: number;
   signal_breakdown: ResearchBucketCount[];
+  signal_pattern_breakdown: ResearchBucketCount[];
+  top_status_messages: ResearchBucketCount[];
   recent_samples: ResearchCurrentSignalSample[];
 }
 

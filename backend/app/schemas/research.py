@@ -98,6 +98,8 @@ class ResearchCurrentSignalBaseline(BaseModel):
     observed_accounts: int
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
     recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)
 
 

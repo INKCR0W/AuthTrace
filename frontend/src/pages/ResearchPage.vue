@@ -53,6 +53,19 @@ const scopeSummary = computed(() => {
 
   return segments.length ? segments.join(" / ") : "全部账号";
 });
+const dominantCurrentSignalPattern = computed(
+  () => overview.value?.current_signal_baseline.signal_pattern_breakdown[0] ?? null,
+);
+const dominantCurrentSignalPatternSummary = computed(() => {
+  const baseline = overview.value?.current_signal_baseline;
+  const dominantPattern = dominantCurrentSignalPattern.value;
+
+  if (!baseline || !dominantPattern || baseline.signal_accounts === 0) {
+    return "";
+  }
+
+  return `当前最常见的信号组合覆盖 ${formatCount(dominantPattern.count)} / ${formatCount(baseline.signal_accounts)} 个样本：${dominantPattern.label}`;
+});
 
 async function loadOverview() {
   loading.value = true;
@@ -266,6 +279,10 @@ onMounted(() => {
             </div>
           </div>
 
+          <p v-if="dominantCurrentSignalPatternSummary" class="subtle-line">
+            {{ dominantCurrentSignalPatternSummary }}
+          </p>
+
           <div v-if="overview.current_signal_baseline.signal_breakdown.length" class="signal-chip-grid">
             <div
               v-for="item in overview.current_signal_baseline.signal_breakdown"
@@ -276,6 +293,42 @@ onMounted(() => {
             </div>
           </div>
           <p v-else class="feedback">当前筛选范围内仍为非 `401` 的账号里，还没有留下需要继续跟踪的研究信号。</p>
+
+          <div
+            v-if="
+              overview.current_signal_baseline.signal_pattern_breakdown.length ||
+              overview.current_signal_baseline.top_status_messages.length
+            "
+            class="observation-list"
+          >
+            <p
+              v-if="overview.current_signal_baseline.signal_pattern_breakdown.length"
+              class="subtle-label"
+            >
+              高频信号组合
+            </p>
+            <p
+              v-for="item in overview.current_signal_baseline.signal_pattern_breakdown"
+              :key="`pattern-${item.key}`"
+              class="observation-item"
+            >
+              {{ item.label }} · {{ formatCount(item.count) }} 个账号
+            </p>
+
+            <p
+              v-if="overview.current_signal_baseline.top_status_messages.length"
+              class="subtle-label"
+            >
+              高频 status_message
+            </p>
+            <p
+              v-for="item in overview.current_signal_baseline.top_status_messages"
+              :key="`status-${item.key}`"
+              class="observation-item"
+            >
+              {{ item.label }} · {{ formatCount(item.count) }} 个账号
+            </p>
+          </div>
         </article>
       </div>
 

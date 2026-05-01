@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -101,6 +102,8 @@ class ResearchCurrentSignalBaseline:
     observed_accounts: int
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount]
+    signal_pattern_breakdown: list[ResearchBucketCount]
+    top_status_messages: list[ResearchBucketCount]
     recent_samples: list[ResearchCurrentSignalSample]
 
 
@@ -389,6 +392,8 @@ def _build_current_signal_baseline(
     )
 
     signal_counter = Counter[str]()
+    pattern_counter = Counter[str]()
+    status_counter = Counter[str]()
     samples: list[ResearchCurrentSignalSample] = []
 
     for account in account_rows:
@@ -397,6 +402,10 @@ def _build_current_signal_baseline(
             continue
 
         signal_counter.update(signal_keys)
+        pattern_counter["|".join(signal_keys)] += 1
+        status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
+        if status_message_excerpt:
+            status_counter[status_message_excerpt] += 1
         samples.append(
             ResearchCurrentSignalSample(
                 account_id=account.id,
@@ -432,6 +441,8 @@ def _build_current_signal_baseline(
         observed_accounts=len(account_rows),
         signal_accounts=len(samples),
         signal_breakdown=_build_signal_breakdown(signal_counter),
+        signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
+        top_status_messages=_build_top_status_messages(status_counter),
         recent_samples=samples[:10],
     )
 
@@ -455,6 +466,19 @@ def _build_signal_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
         if count > 0 and key in _SIGNAL_LABELS
     ]
     return sorted(items, key=lambda item: (-item.count, item.label))
+
+
+def _build_signal_pattern_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
+    items = [
+        ResearchBucketCount(
+            key=pattern,
+            label=" / ".join(_SIGNAL_LABELS[key] for key in pattern.split("|") if key in _SIGNAL_LABELS),
+            count=count,
+        )
+        for pattern, count in counter.items()
+        if count > 0 and pattern
+    ]
+    return sorted(items, key=lambda item: (-item.count, item.label))[:5]
 
 
 def _build_top_status_messages(counter: Counter[str]) -> list[ResearchBucketCount]:
@@ -498,12 +522,66 @@ def _build_status_message_excerpt(value: str | None, *, limit: int = 120) -> str
     if value is None:
         return None
 
-    normalized = " ".join(value.split())
+    normalized = _normalize_status_message_text(value)
     if not normalized:
         return None
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 1].rstrip() + "…"
+
+
+def _normalize_status_message_text(value: str) -> str:
+    normalized = " ".join(value.split())
+    if not normalized:
+        return ""
+
+    parsed = _extract_status_message_payload(normalized)
+    if parsed:
+        normalized = parsed
+
+    return " ".join(normalized.split())
+
+
+def _extract_status_message_payload(value: str) -> str | None:
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    error_payload = payload.get("error")
+    if isinstance(error_payload, dict):
+        message = _first_non_empty_text(
+            error_payload.get("message"),
+            error_payload.get("detail"),
+        )
+        error_type = _first_non_empty_text(
+            error_payload.get("type"),
+            error_payload.get("code"),
+        )
+        if message and error_type:
+            return f"{error_type}: {message}"
+        if message:
+            return message
+        if error_type:
+            return error_type
+
+    message = _first_non_empty_text(payload.get("message"), payload.get("detail"))
+    if message:
+        return message
+
+    return _first_non_empty_text(payload.get("error"))
+
+
+def _first_non_empty_text(*values: object) -> str | None:
+    for value in values:
+        if isinstance(value, str):
+            normalized = " ".join(value.split())
+            if normalized:
+                return normalized
+    return None
 
 
 def _bucket_percent(value: Decimal | None) -> str:

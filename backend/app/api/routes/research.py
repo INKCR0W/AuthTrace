@@ -76,6 +76,14 @@ def get_research_overview_api(
                 ResearchBucketCount.model_validate(item)
                 for item in overview.current_signal_baseline.signal_breakdown
             ],
+            signal_pattern_breakdown=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.current_signal_baseline.signal_pattern_breakdown
+            ],
+            top_status_messages=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.current_signal_baseline.top_status_messages
+            ],
             recent_samples=[
                 ResearchCurrentSignalSample.model_validate(item)
                 for item in overview.current_signal_baseline.recent_samples
