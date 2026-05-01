@@ -1,0 +1,138 @@
+export interface LatestScanJobSummary {
+  id: number;
+  trigger_mode: string;
+  status: string;
+  scan_started_at: string;
+  scan_finished_at: string | null;
+  total_accounts: number;
+  eligible_accounts: number;
+  scanned_accounts: number;
+  success_accounts: number;
+  failed_accounts: number;
+  new_401_events: number;
+  new_quota_events: number;
+  duration_ms: number | null;
+  error_message: string | null;
+}
+
+export interface OverviewTrendPoint {
+  bucket_start: string;
+  became_401_count: number;
+}
+
+export interface DashboardOverviewResponse {
+  total_accounts: number;
+  active_accounts: number;
+  disabled_accounts: number;
+  deleted_accounts: number;
+  current_401_accounts: number;
+  current_invalid_quota_accounts: number;
+  new_401_events_last_24h: number;
+  new_quota_events_last_24h: number;
+  recent_401_trend: OverviewTrendPoint[];
+  latest_scan_job: LatestScanJobSummary | null;
+}
+
+export interface AccountSummary {
+  id: number;
+  source_id: number;
+  auth_index: string;
+  name: string;
+  account: string | null;
+  email: string | null;
+  account_type: string | null;
+  provider: string | null;
+  chatgpt_account_id: string | null;
+  disabled: boolean;
+  upstream_status: string | null;
+  status_message: string | null;
+  current_status_code: number | null;
+  current_is_401: boolean;
+  current_invalid_quota: boolean;
+  current_weekly_used_percent: string | null;
+  current_weekly_reset_at: string | null;
+  current_short_used_percent: string | null;
+  current_short_reset_at: string | null;
+  current_remaining: string | null;
+  current_limit_reached: boolean | null;
+  current_allowed: boolean | null;
+  current_last_checked_at: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  source_deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountSnapshotSummary {
+  id: number;
+  account_id: number;
+  scan_job_id: number;
+  checked_at: string;
+  snapshot_status: string;
+  probe_status_code: number | null;
+  is_401: boolean;
+  quota_status_code: number | null;
+  invalid_quota: boolean;
+  quota_source: string | null;
+  weekly_used_percent: string | null;
+  weekly_reset_at: string | null;
+  short_used_percent: string | null;
+  short_reset_at: string | null;
+  remaining: string | null;
+  limit_reached: boolean | null;
+  allowed: boolean | null;
+  status_message: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface AccountEventSummary {
+  id: number;
+  account_id: number;
+  event_type: string;
+  event_time: string;
+  related_snapshot_id: number;
+  previous_snapshot_id: number | null;
+  from_status_code: number | null;
+  to_status_code: number | null;
+  from_is_401: boolean | null;
+  to_is_401: boolean | null;
+  from_invalid_quota: boolean | null;
+  to_invalid_quota: boolean | null;
+  from_disabled: boolean | null;
+  to_disabled: boolean | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface AccountListResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: AccountSummary[];
+}
+
+export interface AccountDetailResponse {
+  account: AccountSummary;
+  recent_snapshots: AccountSnapshotSummary[];
+  recent_events: AccountEventSummary[];
+}
+
+export interface EventListItem {
+  event: AccountEventSummary;
+  account: AccountSummary;
+  related_snapshot: AccountSnapshotSummary;
+  previous_snapshot: AccountSnapshotSummary | null;
+}
+
+export interface EventListResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: EventListItem[];
+}
+
+export interface EventDetailResponse {
+  item: EventListItem;
+}
