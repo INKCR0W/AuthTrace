@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     management_base_url: str | None = Field(default=None, alias="AUTHTRACE_MANAGEMENT_BASE_URL")
     management_token: str | None = Field(default=None, alias="AUTHTRACE_MANAGEMENT_TOKEN")
     management_timeout_seconds: float = Field(default=30.0, alias="AUTHTRACE_MANAGEMENT_TIMEOUT_SECONDS")
+    management_probe_concurrency: int = Field(default=4, alias="AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY")
     management_user_agent: str = Field(
         default="AuthTrace/0.1 (+https://local.authtrace)",
         alias="AUTHTRACE_MANAGEMENT_USER_AGENT",
@@ -95,6 +96,13 @@ class Settings(BaseSettings):
     def validate_quota_threshold(cls, value: float) -> float:
         if not 0 <= value <= 100:
             raise ValueError("quota threshold must be between 0 and 100")
+        return value
+
+    @field_validator("management_probe_concurrency")
+    @classmethod
+    def validate_probe_concurrency(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("management probe concurrency must be at least 1")
         return value
 
     @property

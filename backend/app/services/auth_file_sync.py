@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -30,6 +31,13 @@ class UsageScanStats:
     failed_accounts: int
     new_401_events: int
     new_quota_events: int
+
+
+@dataclass(slots=True)
+class ProbeExecutionResult:
+    synced: SyncedAuthFile
+    checked_at: datetime
+    result: UsageProbeParseResult
 
 
 class ScanJobAlreadyRunningError(RuntimeError):
@@ -169,16 +177,19 @@ async def _scan_usage_for_eligible_accounts(
 
     weekly_threshold = Decimal(str(settings.management_weekly_quota_threshold))
     short_threshold = Decimal(str(settings.management_short_quota_threshold))
+    probe_results = await _probe_eligible_accounts(
+        client=client,
+        synced_auth_files=synced_auth_files,
+        weekly_threshold=weekly_threshold,
+        short_threshold=short_threshold,
+        concurrency=settings.management_probe_concurrency,
+    )
 
-    for synced in synced_auth_files:
+    for probe_result in probe_results:
         scanned_accounts += 1
-        checked_at = _utcnow()
-        result = await _probe_account_usage(
-            client,
-            synced=synced,
-            weekly_threshold=weekly_threshold,
-            short_threshold=short_threshold,
-        )
+        synced = probe_result.synced
+        checked_at = probe_result.checked_at
+        result = probe_result.result
         previous_snapshot = get_latest_snapshot_for_account(db, account_id=synced.account.id)
         snapshot = AccountSnapshot(
             account_id=synced.account.id,
@@ -234,6 +245,35 @@ async def _scan_usage_for_eligible_accounts(
         new_401_events=new_401_events,
         new_quota_events=new_quota_events,
     )
+
+
+async def _probe_eligible_accounts(
+    *,
+    client: ManagementApiClient,
+    synced_auth_files: list[SyncedAuthFile],
+    weekly_threshold: Decimal,
+    short_threshold: Decimal,
+    concurrency: int,
+) -> list[ProbeExecutionResult]:
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _run_probe(synced: SyncedAuthFile) -> ProbeExecutionResult:
+        async with semaphore:
+            checked_at = _utcnow()
+            result = await _probe_account_usage(
+                client,
+                synced=synced,
+                weekly_threshold=weekly_threshold,
+                short_threshold=short_threshold,
+            )
+        return ProbeExecutionResult(
+            synced=synced,
+            checked_at=checked_at,
+            result=result,
+        )
+
+    tasks = [_run_probe(synced) for synced in synced_auth_files]
+    return await asyncio.gather(*tasks)
 
 
 async def _probe_account_usage(
@@ -322,6 +362,8 @@ def _stringify_text_value(value: Any) -> str | None:
         normalized = value.strip()
         return normalized or None
     return json.dumps(value, ensure_ascii=False)
+
+
 @dataclass(slots=True)
 class EventGenerationStats:
     new_401_events: int = 0

@@ -27,12 +27,16 @@ class FakeManagementClient:
         auth_files: list[dict[str, object]],
         probe_results: dict[str, dict[str, object]] | None = None,
         probe_errors: dict[str, Exception] | None = None,
+        probe_delay_seconds: float = 0.0,
     ) -> None:
         self.auth_files = auth_files
         self.probe_results = probe_results or {}
         self.probe_errors = probe_errors or {}
+        self.probe_delay_seconds = probe_delay_seconds
         self.refresh_called = False
         self.probe_calls: list[tuple[str, str | None]] = []
+        self.current_inflight_probes = 0
+        self.max_inflight_probes = 0
 
     async def refresh_config(self) -> None:
         self.refresh_called = True
@@ -47,9 +51,16 @@ class FakeManagementClient:
         chatgpt_account_id: str | None = None,
     ) -> dict[str, object]:
         self.probe_calls.append((auth_index, chatgpt_account_id))
-        if auth_index in self.probe_errors:
-            raise self.probe_errors[auth_index]
-        return self.probe_results[auth_index]
+        self.current_inflight_probes += 1
+        self.max_inflight_probes = max(self.max_inflight_probes, self.current_inflight_probes)
+        try:
+            if self.probe_delay_seconds > 0:
+                await asyncio.sleep(self.probe_delay_seconds)
+            if auth_index in self.probe_errors:
+                raise self.probe_errors[auth_index]
+            return self.probe_results[auth_index]
+        finally:
+            self.current_inflight_probes -= 1
 
 
 def _create_session_factory() -> sessionmaker[Session]:
@@ -252,6 +263,90 @@ def test_sync_auth_files_persists_accounts_and_scan_job() -> None:
         assert snapshots[0].snapshot_status == "success"
         assert snapshots[0].probe_status_code == 200
         assert snapshots[0].raw_usage_json is not None
+
+    app.dependency_overrides.clear()
+
+
+def test_sync_auth_files_limits_probe_concurrency() -> None:
+    session_factory = _create_session_factory()
+    fake_client = FakeManagementClient(
+        auth_files=[
+            {
+                "name": f"Alpha-{index}",
+                "auth_index": f"auth-{index}",
+                "type": "chatgpt",
+                "provider": "openai",
+                "disabled": False,
+                "status": "active",
+                "status_message": "ok",
+            }
+            for index in range(1, 6)
+        ],
+        probe_results={
+            f"auth-{index}": {
+                "status_code": 200,
+                "body": {
+                    "rate_limit": {
+                        "individual_window": {
+                            "used_percent": 40 + index,
+                            "reset_at": "2026-05-02T00:00:00Z",
+                            "limit_window_seconds": 604800,
+                            "remaining": 100 - index,
+                            "limit_reached": False,
+                        },
+                        "allowed": True,
+                    }
+                },
+            }
+            for index in range(1, 6)
+        },
+        probe_delay_seconds=0.01,
+    )
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+        AUTHTRACE_MANAGEMENT_TARGET_TYPE="chatgpt",
+        AUTHTRACE_MANAGEMENT_PROVIDER="openai",
+        AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY=2,
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+    app.dependency_overrides[get_management_client] = lambda: fake_client
+
+    response = asyncio.run(
+        _request(
+            "POST",
+            "/api/v1/sync/auth-files",
+            json={"trigger_mode": "manual"},
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["scanned_accounts"] == 5
+    assert payload["successful_snapshots"] == 5
+    assert fake_client.max_inflight_probes == 2
+
+    with session_factory() as db:
+        scan_job = db.scalar(select(ScanJob).where(ScanJob.id == payload["scan_job_id"]))
+        snapshots = db.scalars(select(AccountSnapshot).order_by(AccountSnapshot.id)).all()
+
+        assert scan_job is not None
+        assert scan_job.status == "success"
+        assert scan_job.scanned_accounts == 5
+        assert scan_job.success_accounts == 5
+        assert len(snapshots) == 5
 
     app.dependency_overrides.clear()
 
