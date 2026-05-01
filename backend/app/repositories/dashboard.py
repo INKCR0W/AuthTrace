@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models.account import Account
@@ -19,6 +19,20 @@ class OverviewTrendPoint:
 
 
 @dataclass(slots=True)
+class DimensionBreakdownItem:
+    value: str | None
+    label: str
+    total_accounts: int
+    active_accounts: int
+    disabled_accounts: int
+    current_401_accounts: int
+    current_invalid_quota_accounts: int
+    became_401_events_last_24h: int
+    current_401_rate: float
+    current_invalid_quota_rate: float
+
+
+@dataclass(slots=True)
 class OverviewStats:
     total_accounts: int
     active_accounts: int
@@ -29,6 +43,8 @@ class OverviewStats:
     new_401_events_last_24h: int
     new_quota_events_last_24h: int
     recent_401_trend: list[OverviewTrendPoint]
+    provider_breakdown: list[DimensionBreakdownItem]
+    account_type_breakdown: list[DimensionBreakdownItem]
     latest_scan_job: ScanJob | None
 
 
@@ -94,6 +110,16 @@ def get_overview_stats(db: Session) -> OverviewStats:
         new_401_events_last_24h=new_401_events_last_24h,
         new_quota_events_last_24h=new_quota_events_last_24h,
         recent_401_trend=_build_hourly_trend(window_start=trend_start, points=recent_401_event_times),
+        provider_breakdown=_build_dimension_breakdown(
+            db,
+            dimension_column=Account.provider,
+            last_24h_start=last_24h_start,
+        ),
+        account_type_breakdown=_build_dimension_breakdown(
+            db,
+            dimension_column=Account.account_type,
+            last_24h_start=last_24h_start,
+        ),
         latest_scan_job=latest_scan_job,
     )
 
@@ -118,3 +144,85 @@ def _build_hourly_trend(
         )
         for offset in range(24)
     ]
+
+
+def _build_dimension_breakdown(
+    db: Session,
+    *,
+    dimension_column: object,
+    last_24h_start: datetime,
+) -> list[DimensionBreakdownItem]:
+    group_value = dimension_column.label("group_value")
+
+    account_rows = db.execute(
+        select(
+            group_value,
+            func.count(Account.id).label("total_accounts"),
+            func.sum(case((Account.disabled.is_(False), 1), else_=0)).label("active_accounts"),
+            func.sum(case((Account.disabled.is_(True), 1), else_=0)).label("disabled_accounts"),
+            func.sum(case((Account.current_is_401.is_(True), 1), else_=0)).label("current_401_accounts"),
+            func.sum(
+                case((Account.current_invalid_quota.is_(True), 1), else_=0)
+            ).label("current_invalid_quota_accounts"),
+        )
+        .where(Account.source_deleted_at.is_(None))
+        .group_by(dimension_column)
+    ).all()
+
+    event_rows = db.execute(
+        select(
+            group_value,
+            func.count(AccountEvent.id).label("became_401_events_last_24h"),
+        )
+        .select_from(AccountEvent)
+        .join(Account, Account.id == AccountEvent.account_id)
+        .where(
+            Account.source_deleted_at.is_(None),
+            AccountEvent.event_type == "became_401",
+            AccountEvent.event_time >= last_24h_start,
+        )
+        .group_by(dimension_column)
+    ).all()
+
+    event_counts_by_value = {
+        row.group_value: int(row.became_401_events_last_24h or 0)
+        for row in event_rows
+    }
+
+    items = [
+        DimensionBreakdownItem(
+            value=str(row.group_value) if row.group_value is not None else None,
+            label=str(row.group_value) if row.group_value is not None else "未标记",
+            total_accounts=int(row.total_accounts or 0),
+            active_accounts=int(row.active_accounts or 0),
+            disabled_accounts=int(row.disabled_accounts or 0),
+            current_401_accounts=int(row.current_401_accounts or 0),
+            current_invalid_quota_accounts=int(row.current_invalid_quota_accounts or 0),
+            became_401_events_last_24h=event_counts_by_value.get(row.group_value, 0),
+            current_401_rate=_to_rate_percent(
+                numerator=int(row.current_401_accounts or 0),
+                denominator=int(row.total_accounts or 0),
+            ),
+            current_invalid_quota_rate=_to_rate_percent(
+                numerator=int(row.current_invalid_quota_accounts or 0),
+                denominator=int(row.total_accounts or 0),
+            ),
+        )
+        for row in account_rows
+    ]
+    return sorted(
+        items,
+        key=lambda item: (
+            -item.current_401_accounts,
+            -item.became_401_events_last_24h,
+            -item.current_invalid_quota_accounts,
+            -item.total_accounts,
+            item.label,
+        ),
+    )
+
+
+def _to_rate_percent(*, numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((numerator / denominator) * 100, 2)

@@ -20,6 +20,19 @@ export interface OverviewTrendPoint {
   became_401_count: number;
 }
 
+export interface DimensionBreakdownItem {
+  value: string | null;
+  label: string;
+  total_accounts: number;
+  active_accounts: number;
+  disabled_accounts: number;
+  current_401_accounts: number;
+  current_invalid_quota_accounts: number;
+  became_401_events_last_24h: number;
+  current_401_rate: number;
+  current_invalid_quota_rate: number;
+}
+
 export interface DashboardOverviewResponse {
   total_accounts: number;
   active_accounts: number;
@@ -30,6 +43,8 @@ export interface DashboardOverviewResponse {
   new_401_events_last_24h: number;
   new_quota_events_last_24h: number;
   recent_401_trend: OverviewTrendPoint[];
+  provider_breakdown: DimensionBreakdownItem[];
+  account_type_breakdown: DimensionBreakdownItem[];
   latest_scan_job: LatestScanJobSummary | null;
 }
 

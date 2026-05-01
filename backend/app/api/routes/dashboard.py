@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
 from app.repositories.dashboard import get_overview_stats
-from app.schemas.dashboard import DashboardOverviewResponse, LatestScanJobSummary, OverviewTrendPoint
+from app.schemas.dashboard import (
+    DashboardOverviewResponse,
+    DimensionBreakdownItem,
+    LatestScanJobSummary,
+    OverviewTrendPoint,
+)
 
 
 router = APIRouter()
@@ -31,6 +36,14 @@ def get_dashboard_overview(
                 became_401_count=point.became_401_count,
             )
             for point in overview.recent_401_trend
+        ],
+        provider_breakdown=[
+            DimensionBreakdownItem.model_validate(item)
+            for item in overview.provider_breakdown
+        ],
+        account_type_breakdown=[
+            DimensionBreakdownItem.model_validate(item)
+            for item in overview.account_type_breakdown
         ],
         latest_scan_job=(
             LatestScanJobSummary.model_validate(overview.latest_scan_job)

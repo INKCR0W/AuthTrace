@@ -774,6 +774,7 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
         base_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
         alpha_checked_at = base_time
         beta_checked_at = base_time - timedelta(hours=1)
+        delta_checked_at = base_time - timedelta(hours=3)
         gamma_checked_at = base_time - timedelta(days=2)
         first_scan_started_at = base_time - timedelta(hours=2)
         filtered_after = base_time - timedelta(minutes=30)
@@ -830,7 +831,21 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
             last_seen_at=base_time,
             source_deleted_at=base_time,
         )
-        db.add_all([alpha, beta, gamma])
+        delta = Account(
+            source_id=source.id,
+            auth_index="auth-4",
+            name="Delta",
+            provider="anthropic",
+            account_type="claude",
+            disabled=False,
+            current_status_code=200,
+            current_is_401=False,
+            current_invalid_quota=False,
+            current_last_checked_at=delta_checked_at,
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+        )
+        db.add_all([alpha, beta, gamma, delta])
         db.flush()
 
         first_scan_job = ScanJob(
@@ -946,8 +961,8 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
     overview_response = asyncio.run(_request("GET", "/api/v1/dashboard/overview"))
     assert overview_response.status_code == 200
     overview_payload = overview_response.json()
-    assert overview_payload["total_accounts"] == 3
-    assert overview_payload["active_accounts"] == 1
+    assert overview_payload["total_accounts"] == 4
+    assert overview_payload["active_accounts"] == 2
     assert overview_payload["disabled_accounts"] == 1
     assert overview_payload["deleted_accounts"] == 1
     assert overview_payload["current_401_accounts"] == 1
@@ -956,6 +971,58 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
     assert overview_payload["new_quota_events_last_24h"] == 1
     assert len(overview_payload["recent_401_trend"]) == 24
     assert overview_payload["latest_scan_job"]["trigger_mode"] == "scheduler"
+    assert overview_payload["provider_breakdown"] == [
+        {
+            "value": "openai",
+            "label": "openai",
+            "total_accounts": 2,
+            "active_accounts": 1,
+            "disabled_accounts": 1,
+            "current_401_accounts": 1,
+            "current_invalid_quota_accounts": 1,
+            "became_401_events_last_24h": 1,
+            "current_401_rate": 50.0,
+            "current_invalid_quota_rate": 50.0,
+        },
+        {
+            "value": "anthropic",
+            "label": "anthropic",
+            "total_accounts": 1,
+            "active_accounts": 1,
+            "disabled_accounts": 0,
+            "current_401_accounts": 0,
+            "current_invalid_quota_accounts": 0,
+            "became_401_events_last_24h": 0,
+            "current_401_rate": 0.0,
+            "current_invalid_quota_rate": 0.0,
+        },
+    ]
+    assert overview_payload["account_type_breakdown"] == [
+        {
+            "value": "chatgpt",
+            "label": "chatgpt",
+            "total_accounts": 2,
+            "active_accounts": 1,
+            "disabled_accounts": 1,
+            "current_401_accounts": 1,
+            "current_invalid_quota_accounts": 1,
+            "became_401_events_last_24h": 1,
+            "current_401_rate": 50.0,
+            "current_invalid_quota_rate": 50.0,
+        },
+        {
+            "value": "claude",
+            "label": "claude",
+            "total_accounts": 1,
+            "active_accounts": 1,
+            "disabled_accounts": 0,
+            "current_401_accounts": 0,
+            "current_invalid_quota_accounts": 0,
+            "became_401_events_last_24h": 0,
+            "current_401_rate": 0.0,
+            "current_invalid_quota_rate": 0.0,
+        },
+    ]
 
     accounts_response = asyncio.run(
         _request(

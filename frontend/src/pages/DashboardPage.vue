@@ -4,8 +4,8 @@ import { onMounted, ref } from "vue";
 import { getDashboardOverview } from "@/api/client";
 import MetricCard from "@/components/MetricCard.vue";
 import TrendChart from "@/components/TrendChart.vue";
-import { formatCount, formatDateTime, formatDurationMs } from "@/lib/format";
-import type { DashboardOverviewResponse } from "@/types/api";
+import { formatCount, formatDateTime, formatDurationMs, formatPercent } from "@/lib/format";
+import type { DashboardOverviewResponse, DimensionBreakdownItem } from "@/types/api";
 
 
 const loading = ref(false);
@@ -28,6 +28,10 @@ async function loadOverview() {
 onMounted(() => {
   void loadOverview();
 });
+
+function cohortSummary(item: DimensionBreakdownItem) {
+  return `${formatCount(item.active_accounts)} 活跃 / ${formatCount(item.disabled_accounts)} 禁用`;
+}
 </script>
 
 <template>
@@ -117,6 +121,84 @@ onMounted(() => {
             </div>
           </div>
           <p v-else class="feedback">还没有扫描任务数据。</p>
+        </article>
+      </div>
+
+      <div class="panel-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Provider 研究</p>
+              <h3>按 provider 聚合的风险分布</h3>
+            </div>
+          </div>
+
+          <div v-if="overview.provider_breakdown.length" class="table-wrap">
+            <table class="data-table compact">
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>当前账号</th>
+                  <th>当前 401</th>
+                  <th>24h 新增 401</th>
+                  <th>401 率</th>
+                  <th>额度异常率</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in overview.provider_breakdown" :key="item.label">
+                  <td>
+                    <strong>{{ item.label }}</strong>
+                    <p class="subtle-line">{{ cohortSummary(item) }}</p>
+                  </td>
+                  <td>{{ formatCount(item.total_accounts) }}</td>
+                  <td>{{ formatCount(item.current_401_accounts) }}</td>
+                  <td>{{ formatCount(item.became_401_events_last_24h) }}</td>
+                  <td>{{ formatPercent(item.current_401_rate) }}</td>
+                  <td>{{ formatPercent(item.current_invalid_quota_rate) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="feedback">还没有可用于 provider 聚合的账号样本。</p>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">类型研究</p>
+              <h3>按账号类型聚合的风险分布</h3>
+            </div>
+          </div>
+
+          <div v-if="overview.account_type_breakdown.length" class="table-wrap">
+            <table class="data-table compact">
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>当前账号</th>
+                  <th>当前 401</th>
+                  <th>24h 新增 401</th>
+                  <th>401 率</th>
+                  <th>额度异常率</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in overview.account_type_breakdown" :key="item.label">
+                  <td>
+                    <strong>{{ item.label }}</strong>
+                    <p class="subtle-line">{{ cohortSummary(item) }}</p>
+                  </td>
+                  <td>{{ formatCount(item.total_accounts) }}</td>
+                  <td>{{ formatCount(item.current_401_accounts) }}</td>
+                  <td>{{ formatCount(item.became_401_events_last_24h) }}</td>
+                  <td>{{ formatPercent(item.current_401_rate) }}</td>
+                  <td>{{ formatPercent(item.current_invalid_quota_rate) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="feedback">还没有可用于账号类型聚合的样本。</p>
         </article>
       </div>
     </template>
