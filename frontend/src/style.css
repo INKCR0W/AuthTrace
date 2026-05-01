@@ -386,6 +386,10 @@ select {
   border: 1px solid var(--line);
 }
 
+.scan-job-filter-bar {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .input-field {
   width: 100%;
   min-height: 44px;

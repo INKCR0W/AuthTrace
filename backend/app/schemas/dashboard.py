@@ -29,6 +29,7 @@ class LatestScanJobSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    source_id: int
     status: str
     trigger_mode: str
     scan_started_at: datetime
@@ -41,6 +42,7 @@ class LatestScanJobSummary(BaseModel):
     new_401_events: int
     new_quota_events: int
     duration_ms: int | None = None
+    error_message: str | None = None
 
 
 class DashboardOverviewResponse(BaseModel):

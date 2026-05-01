@@ -48,6 +48,17 @@ export interface DashboardOverviewResponse {
   latest_scan_job: LatestScanJobSummary | null;
 }
 
+export interface ScanJobListResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: LatestScanJobSummary[];
+}
+
+export interface ScanJobDetailResponse {
+  item: LatestScanJobSummary;
+}
+
 export interface AccountSummary {
   id: number;
   source_id: number;

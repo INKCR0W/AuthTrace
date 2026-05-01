@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { RouterLink } from "vue-router";
 
 import { getDashboardOverview } from "@/api/client";
 import MetricCard from "@/components/MetricCard.vue";
@@ -90,6 +91,7 @@ function cohortSummary(item: DimensionBreakdownItem) {
               <p class="section-kicker">最近扫描</p>
               <h3>最新任务摘要</h3>
             </div>
+            <RouterLink class="inline-link" to="/scan-jobs">查看全部</RouterLink>
           </div>
 
           <div v-if="overview.latest_scan_job" class="detail-list">
@@ -118,6 +120,10 @@ function cohortSummary(item: DimensionBreakdownItem) {
               <strong>
                 {{ overview.latest_scan_job.success_accounts }} / {{ overview.latest_scan_job.failed_accounts }}
               </strong>
+            </div>
+            <div class="detail-row">
+              <span>任务级错误</span>
+              <strong>{{ overview.latest_scan_job.error_message || "无" }}</strong>
             </div>
           </div>
           <p v-else class="feedback">还没有扫描任务数据。</p>

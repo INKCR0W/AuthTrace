@@ -1176,6 +1176,7 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
         )
         db.add_all([alpha, beta, gamma, delta])
         db.flush()
+        source_id = source.id
 
         first_scan_job = ScanJob(
             source_id=source.id,
@@ -1299,7 +1300,9 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
     assert overview_payload["new_401_events_last_24h"] == 1
     assert overview_payload["new_quota_events_last_24h"] == 1
     assert len(overview_payload["recent_401_trend"]) == 24
+    assert overview_payload["latest_scan_job"]["source_id"] == source_id
     assert overview_payload["latest_scan_job"]["trigger_mode"] == "scheduler"
+    assert overview_payload["latest_scan_job"]["error_message"] is None
     assert overview_payload["provider_breakdown"] == [
         {
             "value": "openai",
@@ -1382,5 +1385,134 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
 
     missing_event_response = asyncio.run(_request("GET", "/api/v1/events/999"))
     assert missing_event_response.status_code == 404
+
+    app.dependency_overrides.clear()
+
+
+def test_scan_job_query_apis_return_paginated_runs_and_error_details() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+        AUTHTRACE_MANAGEMENT_TARGET_TYPE="chatgpt",
+        AUTHTRACE_MANAGEMENT_PROVIDER="openai",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+        source_id = source.id
+        db.add_all(
+            [
+                ScanJob(
+                    source_id=source.id,
+                    trigger_mode="manual",
+                    status="success",
+                    scan_started_at=base_time - timedelta(hours=2),
+                    scan_finished_at=base_time - timedelta(hours=2) + timedelta(minutes=4),
+                    total_accounts=10,
+                    eligible_accounts=8,
+                    scanned_accounts=8,
+                    success_accounts=8,
+                    failed_accounts=0,
+                    new_401_events=1,
+                    new_quota_events=0,
+                    duration_ms=240000,
+                ),
+                ScanJob(
+                    source_id=source.id,
+                    trigger_mode="scheduler",
+                    status="partial_failed",
+                    scan_started_at=base_time - timedelta(hours=1),
+                    scan_finished_at=base_time - timedelta(hours=1) + timedelta(minutes=3),
+                    total_accounts=10,
+                    eligible_accounts=8,
+                    scanned_accounts=8,
+                    success_accounts=6,
+                    failed_accounts=2,
+                    new_401_events=0,
+                    new_quota_events=1,
+                    duration_ms=180000,
+                    error_message="probe timeout on auth-2",
+                ),
+                ScanJob(
+                    source_id=source.id,
+                    trigger_mode="scheduler",
+                    status="running",
+                    scan_started_at=base_time,
+                    scan_finished_at=None,
+                    total_accounts=12,
+                    eligible_accounts=10,
+                    scanned_accounts=4,
+                    success_accounts=4,
+                    failed_accounts=0,
+                    new_401_events=0,
+                    new_quota_events=0,
+                    duration_ms=None,
+                ),
+            ]
+        )
+        db.commit()
+
+    list_response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/scan-jobs?status=partial_failed&trigger_mode=scheduler&limit=1&offset=0",
+        )
+    )
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload["total"] == 1
+    assert list_payload["limit"] == 1
+    assert list_payload["offset"] == 0
+    assert len(list_payload["items"]) == 1
+    assert list_payload["items"][0]["id"] == 2
+    assert list_payload["items"][0]["source_id"] == source_id
+    assert list_payload["items"][0]["trigger_mode"] == "scheduler"
+    assert list_payload["items"][0]["status"] == "partial_failed"
+    assert list_payload["items"][0]["scan_started_at"].startswith(
+        (base_time - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    )
+    assert list_payload["items"][0]["scan_finished_at"].startswith(
+        (base_time - timedelta(hours=1) + timedelta(minutes=3)).strftime("%Y-%m-%dT%H:%M:%S")
+    )
+    assert list_payload["items"][0]["total_accounts"] == 10
+    assert list_payload["items"][0]["eligible_accounts"] == 8
+    assert list_payload["items"][0]["scanned_accounts"] == 8
+    assert list_payload["items"][0]["success_accounts"] == 6
+    assert list_payload["items"][0]["failed_accounts"] == 2
+    assert list_payload["items"][0]["new_401_events"] == 0
+    assert list_payload["items"][0]["new_quota_events"] == 1
+    assert list_payload["items"][0]["duration_ms"] == 180000
+    assert list_payload["items"][0]["error_message"] == "probe timeout on auth-2"
+
+    detail_response = asyncio.run(_request("GET", "/api/v1/scan-jobs/3"))
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["item"]["status"] == "running"
+    assert detail_payload["item"]["scan_finished_at"] is None
+    assert detail_payload["item"]["error_message"] is None
+
+    missing_response = asyncio.run(_request("GET", "/api/v1/scan-jobs/999"))
+    assert missing_response.status_code == 404
 
     app.dependency_overrides.clear()

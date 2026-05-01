@@ -8,6 +8,7 @@ const navItems = [
   { to: "/", label: "总览", name: "dashboard" },
   { to: "/accounts", label: "账号", name: "accounts" },
   { to: "/events", label: "事件", name: "events" },
+  { to: "/scan-jobs", label: "扫描", name: "scan-jobs" },
 ];
 </script>
 

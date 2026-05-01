@@ -3,6 +3,7 @@ import type {
   AccountListResponse,
   DashboardOverviewResponse,
   EventListResponse,
+  ScanJobListResponse,
 } from "@/types/api";
 
 
@@ -52,4 +53,8 @@ export function getEvents(query?: Record<string, string | number | boolean | und
 
 export function getAccountDetail(accountId: number, query?: Record<string, string | number | boolean | undefined>) {
   return requestJson<AccountDetailResponse>(`api/v1/accounts/${accountId}`, query);
+}
+
+export function getScanJobs(query?: Record<string, string | number | boolean | undefined>) {
+  return requestJson<ScanJobListResponse>("api/v1/scan-jobs", query);
 }
