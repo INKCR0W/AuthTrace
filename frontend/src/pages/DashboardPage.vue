@@ -33,6 +33,20 @@ onMounted(() => {
 function cohortSummary(item: DimensionBreakdownItem) {
   return `${formatCount(item.active_accounts)} 活跃 / ${formatCount(item.disabled_accounts)} 禁用`;
 }
+
+function latestScanJobErrorSummary() {
+  const latestScanJob = overview.value?.latest_scan_job;
+  if (!latestScanJob) {
+    return "无";
+  }
+  if (latestScanJob.error_message?.trim()) {
+    return latestScanJob.error_message;
+  }
+  if (latestScanJob.status === "failed" || latestScanJob.status === "partial_failed") {
+    return "未记录错误详情";
+  }
+  return "无";
+}
 </script>
 
 <template>
@@ -112,7 +126,7 @@ function cohortSummary(item: DimensionBreakdownItem) {
             </div>
             <div class="detail-row">
               <span>任务级错误</span>
-              <strong>{{ overview.latest_scan_job.error_message || "无" }}</strong>
+              <strong>{{ latestScanJobErrorSummary() }}</strong>
             </div>
           </div>
           <p v-else class="feedback">还没有扫描任务数据。</p>

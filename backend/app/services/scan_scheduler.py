@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.clients.management import ManagementApiClient
 from app.core.config import Settings
 from app.core.database import SessionLocal
-from app.services.auth_file_sync import ScanJobAlreadyRunningError, run_auth_file_sync
+from app.services.auth_file_sync import ScanJobAlreadyRunningError, describe_exception, run_auth_file_sync
 
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,7 @@ class AuthFileScanScheduler:
             logger.info("自动扫描跳过：已有运行中的扫描任务 #%s", exc.scan_job_id)
         except Exception as exc:
             self.status.last_status = "failed"
-            self.status.last_error_message = str(exc)
+            self.status.last_error_message = describe_exception(exc)
             logger.exception("自动扫描执行失败")
         finally:
             self.status.last_finished_at = _utcnow()

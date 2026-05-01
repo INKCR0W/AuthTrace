@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from typing import Annotated
 
@@ -54,8 +55,6 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 
@@ -75,7 +74,18 @@ class Settings(BaseSettings):
             return ()
 
         if isinstance(value, str):
-            normalized_items = [item.strip().rstrip("/") for item in value.split(",")]
+            normalized_text = value.strip()
+            if not normalized_text:
+                return ()
+
+            if normalized_text.startswith("["):
+                try:
+                    parsed = json.loads(normalized_text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("cors allowed origins JSON 格式无效") from exc
+                return cls.parse_cors_allowed_origins(parsed)
+
+            normalized_items = [item.strip().rstrip("/") for item in normalized_text.split(",")]
             return tuple(item for item in normalized_items if item)
 
         if isinstance(value, (list, tuple, set)):
@@ -141,7 +151,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(_env_file=".env", _env_file_encoding="utf-8")
 
 
 settings = get_settings()

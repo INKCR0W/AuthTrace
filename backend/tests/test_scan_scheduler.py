@@ -229,6 +229,31 @@ def test_scan_scheduler_run_once_keeps_partial_failed_status() -> None:
         assert scan_job.failed_accounts == 1
 
 
+def test_scan_scheduler_run_once_uses_fallback_error_message_for_blank_exception() -> None:
+    session_factory = _create_session_factory()
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+        AUTHTRACE_SCHEDULER_ENABLED=True,
+    )
+
+    def failing_client_factory(_: Settings) -> FakeManagementClient:
+        raise RuntimeError()
+
+    scheduler = AuthFileScanScheduler(
+        settings=settings,
+        session_factory=session_factory,
+        client_factory=failing_client_factory,
+    )
+
+    asyncio.run(scheduler.run_once())
+
+    snapshot = scheduler.get_status_snapshot()
+    assert snapshot.last_status == "failed"
+    assert snapshot.last_error_message == "RuntimeError（未提供错误详情）"
+
+
 def test_scan_scheduler_run_once_skips_when_scan_job_is_already_running() -> None:
     session_factory = _create_session_factory()
     fake_client = FakeManagementClient(auth_files=[], probe_results={})

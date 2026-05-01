@@ -29,11 +29,13 @@ class FakeManagementClient:
         probe_results: dict[str, dict[str, object]] | None = None,
         probe_errors: dict[str, Exception] | None = None,
         probe_delay_seconds: float = 0.0,
+        refresh_error: Exception | None = None,
     ) -> None:
         self.auth_files = auth_files
         self.probe_results = probe_results or {}
         self.probe_errors = probe_errors or {}
         self.probe_delay_seconds = probe_delay_seconds
+        self.refresh_error = refresh_error
         self.refresh_called = False
         self.probe_calls: list[tuple[str, str | None]] = []
         self.current_inflight_probes = 0
@@ -41,6 +43,8 @@ class FakeManagementClient:
 
     async def refresh_config(self) -> None:
         self.refresh_called = True
+        if self.refresh_error is not None:
+            raise self.refresh_error
 
     async def list_auth_files(self) -> list[dict[str, object]]:
         return self.auth_files
@@ -84,7 +88,7 @@ async def _request(
     *,
     json: dict[str, object] | None = None,
 ) -> httpx.Response:
-    transport = httpx.ASGITransport(app=app)
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         return await client.request(method, path, json=json)
 
@@ -563,6 +567,49 @@ def test_failed_probe_does_not_override_previous_current_state() -> None:
         assert snapshot is not None
         assert snapshot.snapshot_status == "failed"
         assert snapshot.error_message == "probe timeout"
+
+    app.dependency_overrides.clear()
+
+
+def test_sync_auth_files_records_fallback_error_message_for_blank_exception() -> None:
+    session_factory = _create_session_factory()
+    fake_client = FakeManagementClient(
+        auth_files=[],
+        refresh_error=RuntimeError(),
+    )
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+    app.dependency_overrides[get_management_client] = lambda: fake_client
+
+    response = asyncio.run(
+        _request(
+            "POST",
+            "/api/v1/sync/auth-files",
+            json={"trigger_mode": "manual"},
+        )
+    )
+
+    assert response.status_code == 500
+
+    with session_factory() as db:
+        scan_job = db.scalar(select(ScanJob))
+        assert scan_job is not None
+        assert scan_job.status == "failed"
+        assert scan_job.error_message == "RuntimeError（未提供错误详情）"
 
     app.dependency_overrides.clear()
 

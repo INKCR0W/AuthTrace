@@ -30,6 +30,26 @@ def test_settings_accepts_comma_separated_cors_origins_from_env_file(tmp_path: P
     )
 
 
+def test_settings_accepts_json_array_cors_origins_from_env_file(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "AUTHTRACE_DATABASE_URL=sqlite+pysqlite:///:memory:",
+                'AUTHTRACE_CORS_ALLOWED_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.cors_allowed_origins == (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    )
+
+
 def test_ensure_default_management_source_recovers_from_concurrent_insert(tmp_path: Path) -> None:
     db_path = tmp_path / "authtrace.sqlite3"
     engine = create_engine(f"sqlite+pysqlite:///{db_path}")

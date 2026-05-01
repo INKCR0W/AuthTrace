@@ -48,6 +48,13 @@ class ScanJobAlreadyRunningError(RuntimeError):
         self.scan_started_at = scan_job.scan_started_at
 
 
+def describe_exception(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return f"{exc.__class__.__name__}（未提供错误详情）"
+
+
 async def run_auth_file_sync(
     db: Session,
     *,
@@ -127,7 +134,7 @@ async def run_auth_file_sync(
             failed_scan_job.status = "failed"
             failed_scan_job.scan_finished_at = finished_at
             failed_scan_job.duration_ms = _duration_ms(started_at=started_at, finished_at=finished_at)
-            failed_scan_job.error_message = str(exc)
+            failed_scan_job.error_message = describe_exception(exc)
             db.commit()
         raise
 
@@ -304,7 +311,7 @@ async def _probe_account_usage(
             limit_reached=None,
             allowed=None,
             raw_usage_json=None,
-            error_message=str(exc),
+            error_message=describe_exception(exc),
             has_quota_observation=False,
         )
 

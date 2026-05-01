@@ -149,6 +149,16 @@ function scanJobTone(status: string) {
   return "danger";
 }
 
+function scanJobErrorSummary(item: { status: string; error_message: string | null }) {
+  if (item.error_message?.trim()) {
+    return item.error_message;
+  }
+  if (item.status === "failed" || item.status === "partial_failed") {
+    return "未记录错误详情";
+  }
+  return "无任务级错误";
+}
+
 function sampleTone(sample: ScanJobSnapshotSample) {
   if (sample.is_401) {
     return "danger";
@@ -490,7 +500,7 @@ onMounted(() => {
             </div>
             <div>
               <p class="subtle-label">失败摘要</p>
-              <p>{{ item.error_message || "无任务级错误" }}</p>
+              <p>{{ scanJobErrorSummary(item) }}</p>
             </div>
           </div>
 
