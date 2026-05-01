@@ -100,12 +100,25 @@ class ResearchCurrentSignalSample:
 
 
 @dataclass(slots=True)
+class ResearchCurrentSignalGroupBreakdownItem:
+    label: str
+    provider: str | None
+    account_type: str | None
+    observed_accounts: int
+    signal_accounts: int
+    signal_rate: float
+    multi_round_signal_accounts: int
+    top_signal_pattern: str | None
+
+
+@dataclass(slots=True)
 class ResearchCurrentSignalBaseline:
     observed_accounts: int
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount]
     signal_pattern_breakdown: list[ResearchBucketCount]
     signal_streak_breakdown: list[ResearchBucketCount]
+    current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem]
     top_status_messages: list[ResearchBucketCount]
     recent_samples: list[ResearchCurrentSignalSample]
 
@@ -394,33 +407,46 @@ def _build_current_signal_baseline(
         )
     )
 
+    observed_group_counter = Counter(
+        (account.provider, account.account_type) for account in account_rows
+    )
     signal_counter = Counter[str]()
     pattern_counter = Counter[str]()
     streak_counter = Counter[str]()
     status_counter = Counter[str]()
+    signal_group_counter = Counter[tuple[str | None, str | None]]()
+    multi_round_group_counter = Counter[tuple[str | None, str | None]]()
+    group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]] = {}
     samples: list[ResearchCurrentSignalSample] = []
-    signal_accounts: list[tuple[Account, list[str]]] = []
+    signal_accounts: list[tuple[Account, list[str], str]] = []
 
     for account in account_rows:
         signal_keys = _extract_account_signal_keys(account)
         if not signal_keys:
             continue
 
+        pattern_key = "|".join(signal_keys)
+        group_key = (account.provider, account.account_type)
         signal_counter.update(signal_keys)
-        pattern_counter["|".join(signal_keys)] += 1
-        signal_accounts.append((account, signal_keys))
+        pattern_counter[pattern_key] += 1
+        signal_group_counter[group_key] += 1
+        group_pattern_counter.setdefault(group_key, Counter())[pattern_key] += 1
+        signal_accounts.append((account, signal_keys, pattern_key))
 
     snapshots_by_account_id = _load_success_snapshots_by_account_id(
         db,
-        account_ids=[account.id for account, _ in signal_accounts],
+        account_ids=[account.id for account, _, _ in signal_accounts],
     )
 
-    for account, signal_keys in signal_accounts:
+    for account, signal_keys, _ in signal_accounts:
+        group_key = (account.provider, account.account_type)
         consecutive_signal_snapshots, signal_started_at = _build_current_signal_streak(
             account=account,
             snapshots=snapshots_by_account_id.get(account.id, []),
         )
         streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
+        if consecutive_signal_snapshots >= 2:
+            multi_round_group_counter[group_key] += 1
         status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
         if status_message_excerpt:
             status_counter[status_message_excerpt] += 1
@@ -464,6 +490,12 @@ def _build_current_signal_baseline(
         signal_breakdown=_build_signal_breakdown(signal_counter),
         signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
         signal_streak_breakdown=_build_signal_streak_breakdown(streak_counter),
+        current_signal_group_breakdown=_build_current_signal_group_breakdown(
+            observed_group_counter=observed_group_counter,
+            signal_group_counter=signal_group_counter,
+            multi_round_group_counter=multi_round_group_counter,
+            group_pattern_counter=group_pattern_counter,
+        ),
         top_status_messages=_build_top_status_messages(status_counter),
         recent_samples=samples[:10],
     )
@@ -550,7 +582,7 @@ def _build_signal_pattern_breakdown(counter: Counter[str]) -> list[ResearchBucke
     items = [
         ResearchBucketCount(
             key=pattern,
-            label=" / ".join(_SIGNAL_LABELS[key] for key in pattern.split("|") if key in _SIGNAL_LABELS),
+            label=_build_signal_pattern_label(pattern),
             count=count,
         )
         for pattern, count in counter.items()
@@ -568,12 +600,68 @@ def _build_signal_streak_breakdown(counter: Counter[str]) -> list[ResearchBucket
     return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in buckets if count > 0]
 
 
+def _build_current_signal_group_breakdown(
+    *,
+    observed_group_counter: Counter[tuple[str | None, str | None]],
+    signal_group_counter: Counter[tuple[str | None, str | None]],
+    multi_round_group_counter: Counter[tuple[str | None, str | None]],
+    group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]],
+) -> list[ResearchCurrentSignalGroupBreakdownItem]:
+    items: list[ResearchCurrentSignalGroupBreakdownItem] = []
+
+    for group_key, signal_accounts in signal_group_counter.items():
+        provider, account_type = group_key
+        observed_accounts = observed_group_counter.get(group_key, 0)
+        top_pattern = _pick_top_signal_pattern(group_pattern_counter.get(group_key, Counter()))
+        items.append(
+            ResearchCurrentSignalGroupBreakdownItem(
+                label=_build_combo_label(provider=provider, account_type=account_type),
+                provider=provider,
+                account_type=account_type,
+                observed_accounts=observed_accounts,
+                signal_accounts=signal_accounts,
+                signal_rate=_to_rate_percent(
+                    numerator=signal_accounts,
+                    denominator=observed_accounts,
+                ),
+                multi_round_signal_accounts=multi_round_group_counter.get(group_key, 0),
+                top_signal_pattern=top_pattern,
+            )
+        )
+
+    return sorted(
+        items,
+        key=lambda item: (
+            -item.signal_accounts,
+            -item.multi_round_signal_accounts,
+            -item.signal_rate,
+            -item.observed_accounts,
+            item.label,
+        ),
+    )
+
+
 def _build_top_status_messages(counter: Counter[str]) -> list[ResearchBucketCount]:
     items = [
         ResearchBucketCount(key=message, label=message, count=count)
         for message, count in counter.items()
     ]
     return sorted(items, key=lambda item: (-item.count, item.label))[:5]
+
+
+def _build_signal_pattern_label(pattern: str) -> str:
+    return " / ".join(_SIGNAL_LABELS[key] for key in pattern.split("|") if key in _SIGNAL_LABELS)
+
+
+def _pick_top_signal_pattern(counter: Counter[str]) -> str | None:
+    if not counter:
+        return None
+
+    pattern, _ = min(
+        counter.items(),
+        key=lambda item: (-item[1], _build_signal_pattern_label(item[0]), item[0]),
+    )
+    return _build_signal_pattern_label(pattern)
 
 
 _SIGNAL_LABELS = {

@@ -9,6 +9,7 @@ from app.schemas.research import (
     ResearchBucketCount,
     ResearchCombinationBreakdownItem,
     ResearchCurrentSignalBaseline,
+    ResearchCurrentSignalGroupBreakdownItem,
     ResearchCurrentSignalSample,
     ResearchEventSample,
     ResearchHourlyDistributionPoint,
@@ -83,6 +84,10 @@ def get_research_overview_api(
             signal_streak_breakdown=[
                 ResearchBucketCount.model_validate(item)
                 for item in overview.current_signal_baseline.signal_streak_breakdown
+            ],
+            current_signal_group_breakdown=[
+                ResearchCurrentSignalGroupBreakdownItem.model_validate(item)
+                for item in overview.current_signal_baseline.current_signal_group_breakdown
             ],
             top_status_messages=[
                 ResearchBucketCount.model_validate(item)

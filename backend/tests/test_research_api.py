@@ -347,6 +347,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
         "signal_streak_breakdown": [],
+        "current_signal_group_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
     }
@@ -625,6 +626,7 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
         "signal_streak_breakdown": [],
+        "current_signal_group_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
     }
@@ -828,6 +830,18 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "count": 1,
         }
     ]
+    assert baseline["current_signal_group_breakdown"] == [
+        {
+            "label": "openai / chatgpt",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "observed_accounts": 2,
+            "signal_accounts": 1,
+            "signal_rate": 50.0,
+            "multi_round_signal_accounts": 1,
+            "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+        }
+    ]
     assert baseline["top_status_messages"] == [
         {
             "key": "usage_limit_reached: usage limit reached on current window",
@@ -982,6 +996,18 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "count": 1,
         }
     ]
+    assert baseline["current_signal_group_breakdown"] == [
+        {
+            "label": "azure / chatgpt",
+            "provider": "azure",
+            "account_type": "chatgpt",
+            "observed_accounts": 1,
+            "signal_accounts": 1,
+            "signal_rate": 100.0,
+            "multi_round_signal_accounts": 0,
+            "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+        }
+    ]
     assert baseline["top_status_messages"] == [
         {
             "key": "busy window",
@@ -1010,6 +1036,90 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             ],
             "consecutive_signal_snapshots": 1,
             "signal_started_at": "2026-05-02T12:00:00Z",
+        }
+    ]
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_stabilizes_group_top_pattern_on_tie() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        db.add_all(
+            [
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-allowed",
+                    name="Allowed-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_allowed=False,
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=1),
+                    last_seen_at=base_time,
+                ),
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-limit",
+                    name="Limit-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_limit_reached=True,
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=1),
+                    last_seen_at=base_time,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current_signal_baseline"]["current_signal_group_breakdown"] == [
+        {
+            "label": "openai / chatgpt",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "observed_accounts": 2,
+            "signal_accounts": 2,
+            "signal_rate": 100.0,
+            "multi_round_signal_accounts": 0,
+            "top_signal_pattern": "allowed=false",
         }
     ]
 

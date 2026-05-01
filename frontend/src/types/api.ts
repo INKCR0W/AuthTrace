@@ -110,12 +110,24 @@ export interface ResearchCurrentSignalSample {
   signal_started_at: string | null;
 }
 
+export interface ResearchCurrentSignalGroupBreakdownItem {
+  label: string;
+  provider: string | null;
+  account_type: string | null;
+  observed_accounts: number;
+  signal_accounts: number;
+  signal_rate: number;
+  multi_round_signal_accounts: number;
+  top_signal_pattern: string | null;
+}
+
 export interface ResearchCurrentSignalBaseline {
   observed_accounts: number;
   signal_accounts: number;
   signal_breakdown: ResearchBucketCount[];
   signal_pattern_breakdown: ResearchBucketCount[];
   signal_streak_breakdown: ResearchBucketCount[];
+  current_signal_group_breakdown: ResearchCurrentSignalGroupBreakdownItem[];
   top_status_messages: ResearchBucketCount[];
   recent_samples: ResearchCurrentSignalSample[];
 }

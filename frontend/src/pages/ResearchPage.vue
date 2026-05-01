@@ -419,6 +419,49 @@ onMounted(() => {
       <article class="panel">
         <div class="panel-heading">
           <div>
+            <p class="section-kicker">当前组合热点</p>
+            <h3>哪些 Provider + 类型组合正在积累研究信号</h3>
+          </div>
+        </div>
+
+        <div v-if="overview.current_signal_baseline.current_signal_group_breakdown.length" class="table-wrap">
+          <table class="data-table compact">
+            <thead>
+              <tr>
+                <th>组合</th>
+                <th>可观测账号</th>
+                <th>信号账号</th>
+                <th>信号率</th>
+                <th>连续 2 轮+</th>
+                <th>主导模式</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="item in overview.current_signal_baseline.current_signal_group_breakdown"
+                :key="`current-group-${item.label}`"
+              >
+                <td>
+                  <strong>{{ item.label }}</strong>
+                  <p class="subtle-line">
+                    provider={{ item.provider ?? "未标记" }} / type={{ item.account_type ?? "未标记" }}
+                  </p>
+                </td>
+                <td>{{ formatCount(item.observed_accounts) }}</td>
+                <td>{{ formatCount(item.signal_accounts) }}</td>
+                <td>{{ formatPercent(item.signal_rate) }}</td>
+                <td>{{ formatCount(item.multi_round_signal_accounts) }}</td>
+                <td>{{ item.top_signal_pattern ?? "未归纳" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="feedback">当前筛选范围内还没有出现可归纳的当前研究信号组合。</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
             <p class="section-kicker">样本证据</p>
             <h3>最近进入 401 的真实样本</h3>
           </div>

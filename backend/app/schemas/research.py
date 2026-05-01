@@ -96,12 +96,26 @@ class ResearchCurrentSignalSample(BaseModel):
     signal_started_at: datetime | None = None
 
 
+class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str
+    provider: str | None = None
+    account_type: str | None = None
+    observed_accounts: int
+    signal_accounts: int
+    signal_rate: float
+    multi_round_signal_accounts: int
+    top_signal_pattern: str | None = None
+
+
 class ResearchCurrentSignalBaseline(BaseModel):
     observed_accounts: int
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem] = Field(default_factory=list)
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
     recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)
 
