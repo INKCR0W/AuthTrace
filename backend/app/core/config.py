@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     management_base_url: str | None = Field(default=None, alias="AUTHTRACE_MANAGEMENT_BASE_URL")
     management_token: str | None = Field(default=None, alias="AUTHTRACE_MANAGEMENT_TOKEN")
     management_timeout_seconds: float = Field(default=30.0, alias="AUTHTRACE_MANAGEMENT_TIMEOUT_SECONDS")
+    management_request_retries: int = Field(default=2, alias="AUTHTRACE_MANAGEMENT_REQUEST_RETRIES")
+    management_retry_backoff_seconds: float = Field(
+        default=1.0,
+        alias="AUTHTRACE_MANAGEMENT_RETRY_BACKOFF_SECONDS",
+    )
     management_probe_concurrency: int = Field(default=4, alias="AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY")
     scheduler_enabled: bool = Field(default=False, alias="AUTHTRACE_SCHEDULER_ENABLED")
     scheduler_interval_minutes: int = Field(default=15, alias="AUTHTRACE_SCHEDULER_INTERVAL_MINUTES")
@@ -99,6 +104,20 @@ class Settings(BaseSettings):
     def validate_quota_threshold(cls, value: float) -> float:
         if not 0 <= value <= 100:
             raise ValueError("quota threshold must be between 0 and 100")
+        return value
+
+    @field_validator("management_timeout_seconds", "management_retry_backoff_seconds")
+    @classmethod
+    def validate_non_negative_seconds(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("seconds must be greater than or equal to 0")
+        return value
+
+    @field_validator("management_request_retries")
+    @classmethod
+    def validate_management_request_retries(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("management request retries must be greater than or equal to 0")
         return value
 
     @field_validator("management_probe_concurrency")

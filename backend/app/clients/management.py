@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -18,11 +19,15 @@ class ManagementApiClient:
         base_url: str,
         token: str,
         timeout_seconds: float,
+        request_retries: int,
+        retry_backoff_seconds: float,
         user_agent: str,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout_seconds = timeout_seconds
+        self.request_retries = request_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
         self.user_agent = user_agent
 
     @classmethod
@@ -34,6 +39,8 @@ class ManagementApiClient:
             base_url=settings.management_base_url,
             token=settings.management_token,
             timeout_seconds=settings.management_timeout_seconds,
+            request_retries=settings.management_request_retries,
+            retry_backoff_seconds=settings.management_retry_backoff_seconds,
             user_agent=settings.management_user_agent,
         )
 
@@ -98,23 +105,53 @@ class ManagementApiClient:
         *,
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
-        async with httpx.AsyncClient(
-            base_url=self.base_url,
-            headers=self._default_headers(),
-            timeout=self.timeout_seconds,
-        ) as client:
-            response = await client.request(method, path, json=json)
+        attempts = self.request_retries + 1
+        last_error: ManagementApiError | None = None
 
-        if response.status_code >= 400:
-            detail = response.text[:200]
-            raise ManagementApiError(
-                f"management request failed: {method} {path} -> {response.status_code} {detail}"
-            )
+        for attempt in range(1, attempts + 1):
+            try:
+                async with httpx.AsyncClient(
+                    base_url=self.base_url,
+                    headers=self._default_headers(),
+                    timeout=self.timeout_seconds,
+                ) as client:
+                    response = await client.request(method, path, json=json)
+            except httpx.TransportError as exc:
+                last_error = ManagementApiError(
+                    f"management request transport error: {method} {path} -> {exc}"
+                )
+                if attempt < attempts:
+                    await self._sleep_before_retry(attempt)
+                    continue
+                raise last_error from exc
 
-        return response
+            if response.status_code >= 400:
+                detail = response.text[:200]
+                last_error = ManagementApiError(
+                    f"management request failed: {method} {path} -> {response.status_code} {detail}"
+                )
+                if attempt < attempts and _is_retryable_status_code(response.status_code):
+                    await self._sleep_before_retry(attempt)
+                    continue
+                raise last_error
+
+            return response
+
+        if last_error is not None:
+            raise last_error
+        raise ManagementApiError(f"management request failed without response: {method} {path}")
+
+    async def _sleep_before_retry(self, attempt: int) -> None:
+        if self.retry_backoff_seconds <= 0:
+            return
+        await asyncio.sleep(self.retry_backoff_seconds * attempt)
 
     def _default_headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
         }
+
+
+def _is_retryable_status_code(status_code: int) -> bool:
+    return status_code == 429 or status_code >= 500

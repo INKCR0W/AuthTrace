@@ -35,6 +35,12 @@ uv run uvicorn app.main:app --reload
 - `AUTHTRACE_SCHEDULER_INTERVAL_MINUTES` 用于控制扫描间隔，默认 `15`
 - 若未配置完整管理端地址或 token，自动扫描不会启动，扫描任务页会显示阻塞原因
 
+管理端请求稳定性配置：
+
+- `AUTHTRACE_MANAGEMENT_REQUEST_RETRIES` 控制 `refresh-config`、`auth-files` 和 `api-call` 的额外重试次数，默认 `2`
+- `AUTHTRACE_MANAGEMENT_RETRY_BACKOFF_SECONDS` 控制重试退避基线秒数，默认 `1`，第 N 次重试等待 `N * 基线秒数`
+- 仅 `429`、`5xx` 和网络传输异常会触发自动重试，其他 `4xx` 仍按单次失败处理
+
 ## 常用命令
 
 ```powershell
