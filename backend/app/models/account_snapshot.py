@@ -4,11 +4,25 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+JSON_JSONB = JSON().with_variant(JSONB, "postgresql")
 
 
 class AccountSnapshot(Base):
@@ -57,8 +71,8 @@ class AccountSnapshot(Base):
     limit_reached: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     status_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
-    raw_auth_file_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    raw_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    raw_auth_file_json: Mapped[dict[str, Any] | None] = mapped_column(JSON_JSONB, nullable=True)
+    raw_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSON_JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")

@@ -17,3 +17,6 @@ class AuthFileSyncResponse(BaseModel):
     eligible_accounts: int
     skipped_accounts: int
     missing_auth_index_accounts: int
+    scanned_accounts: int
+    successful_snapshots: int
+    failed_snapshots: int
