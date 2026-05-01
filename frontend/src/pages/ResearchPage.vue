@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { RouterLink } from "vue-router";
 
 import { getResearchOverview } from "@/api/client";
 import DistributionBarChart from "@/components/DistributionBarChart.vue";
 import MetricCard from "@/components/MetricCard.vue";
-import { formatCount, formatDateTime, formatPercent } from "@/lib/format";
-import type { ResearchBucketCount, ResearchOverviewResponse } from "@/types/api";
+import StatusPill from "@/components/StatusPill.vue";
+import { formatCount, formatDateTime, formatPercent, formatRemaining } from "@/lib/format";
+import type { ResearchBucketCount, ResearchEventSample, ResearchOverviewResponse } from "@/types/api";
 
 
 const loading = ref(false);
@@ -43,6 +45,34 @@ async function loadOverview() {
 
 function bucketSummary(item: ResearchBucketCount) {
   return `${item.label}：${formatCount(item.count)} 次`;
+}
+
+function sampleUsageSummary(item: ResearchEventSample) {
+  return [
+    `周额度 ${formatPercent(item.previous_weekly_used_percent)}`,
+    `短周期 ${formatPercent(item.previous_short_used_percent)}`,
+    `remaining ${formatRemaining(item.previous_remaining)}`,
+  ].join(" / ");
+}
+
+function sampleSignalSummary(item: ResearchEventSample) {
+  const signals: string[] = [];
+
+  if (item.previous_limit_reached === true) {
+    signals.push("limit_reached=true");
+  }
+  if (item.previous_allowed === false) {
+    signals.push("allowed=false");
+  }
+  if (item.previous_status_message) {
+    signals.push(`status_message=${item.previous_status_message}`);
+  }
+
+  if (!signals.length) {
+    return "前序正常快照未记录明显附加信号";
+  }
+
+  return signals.join(" / ");
 }
 
 onMounted(() => {
@@ -207,6 +237,61 @@ onMounted(() => {
           </table>
         </div>
         <p v-else class="feedback">当前窗口内还没有可供研究的组合样本。</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">样本证据</p>
+            <h3>最近进入 401 的真实样本</h3>
+          </div>
+        </div>
+
+        <div v-if="overview.recent_event_samples.length" class="event-stack">
+          <article
+            v-for="sample in overview.recent_event_samples"
+            :key="sample.event_id"
+            class="event-card"
+          >
+            <div class="event-card-head">
+              <div>
+                <p class="event-type">became_401</p>
+                <RouterLink class="inline-link event-title" :to="`/events/${sample.event_id}`">
+                  {{ sample.account_name }}
+                </RouterLink>
+                <p class="subtle-line">
+                  {{ sample.provider ?? "未标记 provider" }} / {{ sample.account_type ?? "未标记类型" }}
+                </p>
+              </div>
+              <div class="status-stack">
+                <StatusPill
+                  :tone="sample.current_is_401 ? 'danger' : 'success'"
+                  :text="sample.current_is_401 ? '当前仍为 401' : '当前已恢复'"
+                />
+                <RouterLink class="nav-tab compact-button" :to="`/accounts/${sample.account_id}`">
+                  查看账号
+                </RouterLink>
+              </div>
+            </div>
+
+            <div class="event-grid">
+              <div>
+                <p class="subtle-label">事件时间</p>
+                <p>{{ formatDateTime(sample.event_time) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">前序正常快照</p>
+                <p>{{ formatDateTime(sample.previous_checked_at) }}</p>
+                <p class="subtle-line">{{ sampleUsageSummary(sample) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">前序附加信号</p>
+                <p>{{ sampleSignalSummary(sample) }}</p>
+              </div>
+            </div>
+          </article>
+        </div>
+        <p v-else class="feedback">当前窗口内还没有最近 401 样本可回放。</p>
       </article>
     </template>
   </section>

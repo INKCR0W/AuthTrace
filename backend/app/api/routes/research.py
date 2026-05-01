@@ -8,6 +8,7 @@ from app.repositories.research import get_research_overview
 from app.schemas.research import (
     ResearchBucketCount,
     ResearchCombinationBreakdownItem,
+    ResearchEventSample,
     ResearchHourlyDistributionPoint,
     ResearchOverviewResponse,
     ResearchOverviewSummary,
@@ -55,4 +56,8 @@ def get_research_overview_api(
                 for item in overview.pre_401_insights.top_status_messages
             ],
         ),
+        recent_event_samples=[
+            ResearchEventSample.model_validate(item)
+            for item in overview.recent_event_samples
+        ],
     )

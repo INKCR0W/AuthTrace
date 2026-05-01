@@ -62,12 +62,32 @@ class ResearchPre401Insights:
 
 
 @dataclass(slots=True)
+class ResearchEventSample:
+    event_id: int
+    account_id: int
+    account_name: str
+    provider: str | None
+    account_type: str | None
+    event_time: datetime
+    current_is_401: bool
+    previous_snapshot_id: int | None
+    previous_checked_at: datetime | None
+    previous_weekly_used_percent: Decimal | None
+    previous_short_used_percent: Decimal | None
+    previous_remaining: Decimal | None
+    previous_limit_reached: bool | None
+    previous_allowed: bool | None
+    previous_status_message: str | None
+
+
+@dataclass(slots=True)
 class ResearchOverview:
     window_days: int
     summary: ResearchOverviewSummary
     provider_account_type_breakdown: list[ResearchCombinationBreakdownItem]
     event_hour_distribution: list[ResearchHourlyDistributionPoint]
     pre_401_insights: ResearchPre401Insights
+    recent_event_samples: list[ResearchEventSample]
 
 
 def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverview:
@@ -136,6 +156,7 @@ def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverv
         ),
         event_hour_distribution=_build_event_hour_distribution(event_rows),
         pre_401_insights=_build_pre_401_insights(event_rows),
+        recent_event_samples=_build_recent_event_samples(event_rows),
     )
 
 
@@ -256,6 +277,56 @@ def _build_pre_401_insights(
         signal_breakdown=_build_signal_breakdown(signal_counter),
         top_status_messages=_build_top_status_messages(status_counter),
     )
+
+
+def _build_recent_event_samples(
+    event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
+) -> list[ResearchEventSample]:
+    samples = [
+        ResearchEventSample(
+            event_id=event.id,
+            account_id=account.id,
+            account_name=account.name,
+            provider=account.provider,
+            account_type=account.account_type,
+            event_time=_ensure_utc(event.event_time),
+            current_is_401=account.current_is_401,
+            previous_snapshot_id=previous_snapshot.id if previous_snapshot is not None else None,
+            previous_checked_at=(
+                _ensure_utc(previous_snapshot.checked_at)
+                if previous_snapshot is not None
+                else None
+            ),
+            previous_weekly_used_percent=(
+                previous_snapshot.weekly_used_percent
+                if previous_snapshot is not None
+                else None
+            ),
+            previous_short_used_percent=(
+                previous_snapshot.short_used_percent
+                if previous_snapshot is not None
+                else None
+            ),
+            previous_remaining=previous_snapshot.remaining if previous_snapshot is not None else None,
+            previous_limit_reached=(
+                previous_snapshot.limit_reached
+                if previous_snapshot is not None
+                else None
+            ),
+            previous_allowed=previous_snapshot.allowed if previous_snapshot is not None else None,
+            previous_status_message=(
+                previous_snapshot.status_message
+                if previous_snapshot is not None
+                else None
+            ),
+        )
+        for event, account, previous_snapshot in event_rows
+    ]
+    return sorted(
+        samples,
+        key=lambda item: (item.event_time, item.event_id),
+        reverse=True,
+    )[:10]
 
 
 def _build_percent_band_counts(counter: Counter[str]) -> list[ResearchBucketCount]:

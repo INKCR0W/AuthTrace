@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,9 +57,30 @@ class ResearchPre401Insights(BaseModel):
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
 
 
+class ResearchEventSample(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: int
+    account_id: int
+    account_name: str
+    provider: str | None = None
+    account_type: str | None = None
+    event_time: datetime
+    current_is_401: bool
+    previous_snapshot_id: int | None = None
+    previous_checked_at: datetime | None = None
+    previous_weekly_used_percent: Decimal | None = None
+    previous_short_used_percent: Decimal | None = None
+    previous_remaining: Decimal | None = None
+    previous_limit_reached: bool | None = None
+    previous_allowed: bool | None = None
+    previous_status_message: str | None = None
+
+
 class ResearchOverviewResponse(BaseModel):
     window_days: int
     summary: ResearchOverviewSummary
     provider_account_type_breakdown: list[ResearchCombinationBreakdownItem] = Field(default_factory=list)
     event_hour_distribution: list[ResearchHourlyDistributionPoint] = Field(default_factory=list)
     pre_401_insights: ResearchPre401Insights
+    recent_event_samples: list[ResearchEventSample] = Field(default_factory=list)

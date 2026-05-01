@@ -99,6 +99,25 @@ export interface ResearchOverviewResponse {
   provider_account_type_breakdown: ResearchCombinationBreakdownItem[];
   event_hour_distribution: ResearchHourlyDistributionPoint[];
   pre_401_insights: ResearchPre401Insights;
+  recent_event_samples: ResearchEventSample[];
+}
+
+export interface ResearchEventSample {
+  event_id: number;
+  account_id: number;
+  account_name: string;
+  provider: string | null;
+  account_type: string | null;
+  event_time: string;
+  current_is_401: boolean;
+  previous_snapshot_id: number | null;
+  previous_checked_at: string | null;
+  previous_weekly_used_percent: string | null;
+  previous_short_used_percent: string | null;
+  previous_remaining: string | null;
+  previous_limit_reached: boolean | null;
+  previous_allowed: boolean | null;
+  previous_status_message: string | null;
 }
 
 export interface DefaultManagementSourceResponse {

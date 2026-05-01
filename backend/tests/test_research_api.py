@@ -321,4 +321,25 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         {"key": "warmup", "label": "warmup", "count": 1},
     ]
 
+    recent_samples = payload["recent_event_samples"]
+    assert [item["event_id"] for item in recent_samples[:3]] == [1, 2, 3]
+    assert recent_samples[0] == {
+        "event_id": 1,
+        "account_id": 1,
+        "account_name": "OpenAI-Hot",
+        "provider": "openai",
+        "account_type": "chatgpt",
+        "event_time": "2026-05-02T11:00:00Z",
+        "current_is_401": True,
+        "previous_snapshot_id": 1,
+        "previous_checked_at": "2026-05-02T10:55:00Z",
+        "previous_weekly_used_percent": "95.00",
+        "previous_short_used_percent": "88.00",
+        "previous_remaining": "4.00",
+        "previous_limit_reached": True,
+        "previous_allowed": False,
+        "previous_status_message": "soft_block",
+    }
+    assert recent_samples[2]["previous_status_message"] == "warmup"
+
     app.dependency_overrides.clear()
