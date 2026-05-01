@@ -14,6 +14,17 @@ import type {
   ResearchOverviewResponse,
 } from "@/types/api";
 
+const CURRENT_SIGNAL_OPTIONS = [
+  { key: "weekly_ge_90", label: "周额度 >= 90%" },
+  { key: "short_ge_90", label: "短周期 >= 90%" },
+  { key: "limit_reached", label: "limit_reached=true" },
+  { key: "allowed_false", label: "allowed=false" },
+  { key: "remaining_empty", label: "remaining <= 0" },
+  { key: "status_message_present", label: "存在 status_message" },
+] as const;
+const currentSignalLabelMap = Object.fromEntries(
+  CURRENT_SIGNAL_OPTIONS.map((item) => [item.key, item.label]),
+) as Record<string, string>;
 
 const loading = ref(false);
 const error = ref("");
@@ -22,6 +33,7 @@ const overview = ref<ResearchOverviewResponse | null>(null);
 const filters = reactive({
   provider: "",
   accountType: "",
+  currentSignalKey: "",
 });
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
@@ -40,7 +52,16 @@ const shortBandValues = computed(
 );
 const normalizedProvider = computed(() => filters.provider.trim());
 const normalizedAccountType = computed(() => filters.accountType.trim());
-const hasScopedFilters = computed(() => Boolean(normalizedProvider.value || normalizedAccountType.value));
+const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim());
+const selectedCurrentSignalLabel = computed(() => {
+  if (!normalizedCurrentSignalKey.value) {
+    return "";
+  }
+  return currentSignalLabelMap[normalizedCurrentSignalKey.value] ?? normalizedCurrentSignalKey.value;
+});
+const hasScopedFilters = computed(
+  () => Boolean(normalizedProvider.value || normalizedAccountType.value || normalizedCurrentSignalKey.value),
+);
 const scopeSummary = computed(() => {
   const segments: string[] = [];
 
@@ -50,8 +71,17 @@ const scopeSummary = computed(() => {
   if (normalizedAccountType.value) {
     segments.push(`类型=${normalizedAccountType.value}`);
   }
+  if (selectedCurrentSignalLabel.value) {
+    segments.push(`当前信号=${selectedCurrentSignalLabel.value}`);
+  }
 
   return segments.length ? segments.join(" / ") : "全部账号";
+});
+const currentSignalScopeHint = computed(() => {
+  if (!selectedCurrentSignalLabel.value) {
+    return "";
+  }
+  return `当前基线已按“${selectedCurrentSignalLabel.value}”收窄；下方仍会继续展示这些样本共现的其他信号，便于判断伴随模式。`;
 });
 const dominantCurrentSignalPattern = computed(
   () => overview.value?.current_signal_baseline.signal_pattern_breakdown[0] ?? null,
@@ -76,6 +106,7 @@ async function loadOverview() {
       window_days: windowDays.value,
       provider: normalizedProvider.value || undefined,
       account_type: normalizedAccountType.value || undefined,
+      current_signal_key: normalizedCurrentSignalKey.value || undefined,
     });
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : "加载研究数据失败";
@@ -87,6 +118,7 @@ async function loadOverview() {
 function resetFilters() {
   filters.provider = "";
   filters.accountType = "";
+  filters.currentSignalKey = "";
   void loadOverview();
 }
 
@@ -171,6 +203,15 @@ onMounted(() => {
           />
         </label>
         <label>
+          <span class="subtle-label">当前信号</span>
+          <select v-model="filters.currentSignalKey" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部信号</option>
+            <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="item.key" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">窗口</span>
           <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
             <option :value="7">最近 7 天</option>
@@ -184,6 +225,9 @@ onMounted(() => {
     </div>
 
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
+    <p v-if="selectedCurrentSignalLabel" class="subtle-line">
+      “当前信号”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
+    </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
 
@@ -287,6 +331,10 @@ onMounted(() => {
               <strong>{{ formatCount(overview.current_signal_baseline.signal_accounts) }}</strong>
             </div>
           </div>
+
+          <p v-if="currentSignalScopeHint" class="subtle-line">
+            {{ currentSignalScopeHint }}
+          </p>
 
           <p v-if="dominantCurrentSignalPatternSummary" class="subtle-line">
             {{ dominantCurrentSignalPatternSummary }}

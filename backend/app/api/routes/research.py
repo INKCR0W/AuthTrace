@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.research import get_research_overview
+from app.repositories.research import RESEARCH_SIGNAL_KEYS, get_research_overview
 from app.schemas.research import (
     ResearchBucketCount,
     ResearchCombinationBreakdownItem,
@@ -28,12 +28,20 @@ def get_research_overview_api(
     window_days: int = Query(default=7, ge=1, le=30),
     provider: str | None = Query(default=None),
     account_type: str | None = Query(default=None),
+    current_signal_key: str | None = Query(default=None),
 ) -> ResearchOverviewResponse:
+    if current_signal_key is not None and current_signal_key not in RESEARCH_SIGNAL_KEYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported current_signal_key: {current_signal_key}",
+        )
+
     overview = get_research_overview(
         db,
         window_days=window_days,
         provider=provider,
         account_type=account_type,
+        current_signal_key=current_signal_key,
     )
     return ResearchOverviewResponse(
         window_days=overview.window_days,

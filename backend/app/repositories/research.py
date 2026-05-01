@@ -138,6 +138,7 @@ class ResearchOverview:
 class ResearchOverviewFilters:
     provider: str | None = None
     account_type: str | None = None
+    current_signal_key: str | None = None
 
 
 def get_research_overview(
@@ -146,10 +147,15 @@ def get_research_overview(
     window_days: int = 7,
     provider: str | None = None,
     account_type: str | None = None,
+    current_signal_key: str | None = None,
 ) -> ResearchOverview:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=window_days)
-    filters = ResearchOverviewFilters(provider=provider, account_type=account_type)
+    filters = ResearchOverviewFilters(
+        provider=provider,
+        account_type=account_type,
+        current_signal_key=current_signal_key,
+    )
     account_scope_conditions = _build_account_scope_conditions(filters)
 
     previous_snapshot = aliased(AccountSnapshot)
@@ -424,6 +430,8 @@ def _build_current_signal_baseline(
         signal_keys = _extract_account_signal_keys(account)
         if not signal_keys:
             continue
+        if filters.current_signal_key and filters.current_signal_key not in signal_keys:
+            continue
 
         pattern_key = "|".join(signal_keys)
         group_key = (account.provider, account.account_type)
@@ -672,6 +680,7 @@ _SIGNAL_LABELS = {
     "remaining_empty": "remaining <= 0",
     "status_message_present": "存在 status_message",
 }
+RESEARCH_SIGNAL_KEYS = tuple(_SIGNAL_LABELS)
 
 
 def _extract_account_signal_keys(account: Account) -> list[str]:
