@@ -115,9 +115,23 @@ class ResearchOverview:
     current_signal_baseline: ResearchCurrentSignalBaseline
 
 
-def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverview:
+@dataclass(slots=True)
+class ResearchOverviewFilters:
+    provider: str | None = None
+    account_type: str | None = None
+
+
+def get_research_overview(
+    db: Session,
+    *,
+    window_days: int = 7,
+    provider: str | None = None,
+    account_type: str | None = None,
+) -> ResearchOverview:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=window_days)
+    filters = ResearchOverviewFilters(provider=provider, account_type=account_type)
+    account_scope_conditions = _build_account_scope_conditions(filters)
 
     previous_snapshot = aliased(AccountSnapshot)
     event_rows = db.execute(
@@ -125,7 +139,7 @@ def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverv
         .join(Account, Account.id == AccountEvent.account_id)
         .outerjoin(previous_snapshot, previous_snapshot.id == AccountEvent.previous_snapshot_id)
         .where(
-            Account.source_deleted_at.is_(None),
+            *account_scope_conditions,
             AccountEvent.event_type == "became_401",
             AccountEvent.event_time >= window_start,
         )
@@ -134,19 +148,19 @@ def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverv
     active_accounts = int(
         db.scalar(
             select(func.count(Account.id)).where(
-                Account.source_deleted_at.is_(None),
+                *account_scope_conditions,
                 Account.disabled.is_(False),
             )
         )
         or 0
     )
     current_population_accounts = int(
-        db.scalar(select(func.count(Account.id)).where(Account.source_deleted_at.is_(None))) or 0
+        db.scalar(select(func.count(Account.id)).where(*account_scope_conditions)) or 0
     )
     current_401_accounts = int(
         db.scalar(
             select(func.count(Account.id)).where(
-                Account.source_deleted_at.is_(None),
+                *account_scope_conditions,
                 Account.current_is_401.is_(True),
             )
         )
@@ -178,11 +192,12 @@ def get_research_overview(db: Session, *, window_days: int = 7) -> ResearchOverv
         provider_account_type_breakdown=_build_provider_account_type_breakdown(
             db,
             window_start=window_start,
+            filters=filters,
         ),
         event_hour_distribution=_build_event_hour_distribution(event_rows),
         pre_401_insights=_build_pre_401_insights(event_rows),
         recent_event_samples=_build_recent_event_samples(event_rows),
-        current_signal_baseline=_build_current_signal_baseline(db),
+        current_signal_baseline=_build_current_signal_baseline(db, filters=filters),
     )
 
 
@@ -190,7 +205,9 @@ def _build_provider_account_type_breakdown(
     db: Session,
     *,
     window_start: datetime,
+    filters: ResearchOverviewFilters,
 ) -> list[ResearchCombinationBreakdownItem]:
+    account_scope_conditions = _build_account_scope_conditions(filters)
     account_rows = db.execute(
         select(
             Account.provider.label("provider"),
@@ -198,7 +215,7 @@ def _build_provider_account_type_breakdown(
             func.count(Account.id).label("total_accounts"),
             func.sum(case((Account.current_is_401.is_(True), 1), else_=0)).label("current_401_accounts"),
         )
-        .where(Account.source_deleted_at.is_(None))
+        .where(*account_scope_conditions)
         .group_by(Account.provider, Account.account_type)
     ).all()
 
@@ -213,7 +230,7 @@ def _build_provider_account_type_breakdown(
         .select_from(AccountEvent)
         .join(Account, Account.id == AccountEvent.account_id)
         .where(
-            Account.source_deleted_at.is_(None),
+            *account_scope_conditions,
             AccountEvent.event_type == "became_401",
             AccountEvent.event_time >= window_start,
         )
@@ -355,11 +372,16 @@ def _build_recent_event_samples(
     )[:10]
 
 
-def _build_current_signal_baseline(db: Session) -> ResearchCurrentSignalBaseline:
+def _build_current_signal_baseline(
+    db: Session,
+    *,
+    filters: ResearchOverviewFilters,
+) -> ResearchCurrentSignalBaseline:
+    account_scope_conditions = _build_account_scope_conditions(filters)
     account_rows = list(
         db.scalars(
             select(Account).where(
-                Account.source_deleted_at.is_(None),
+                *account_scope_conditions,
                 Account.disabled.is_(False),
                 Account.current_is_401.is_(False),
             )
@@ -502,6 +524,17 @@ def _build_combo_label(*, provider: str | None, account_type: str | None) -> str
     provider_label = provider or "未标记 provider"
     account_type_label = account_type or "未标记类型"
     return f"{provider_label} / {account_type_label}"
+
+
+def _build_account_scope_conditions(filters: ResearchOverviewFilters) -> list[object]:
+    conditions: list[object] = [Account.source_deleted_at.is_(None)]
+
+    if filters.provider:
+        conditions.append(Account.provider == filters.provider)
+    if filters.account_type:
+        conditions.append(Account.account_type == filters.account_type)
+
+    return conditions
 
 
 def _decimal_gte(value: Decimal | None, threshold: Decimal) -> bool:

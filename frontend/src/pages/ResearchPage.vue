@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 
 import { getResearchOverview } from "@/api/client";
@@ -19,6 +19,10 @@ const loading = ref(false);
 const error = ref("");
 const windowDays = ref(7);
 const overview = ref<ResearchOverviewResponse | null>(null);
+const filters = reactive({
+  provider: "",
+  accountType: "",
+});
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
 const hourlyValues = computed(() => overview.value?.event_hour_distribution.map((item) => item.became_401_count) ?? []);
@@ -34,18 +38,43 @@ const shortBandLabels = computed(
 const shortBandValues = computed(
   () => overview.value?.pre_401_insights.short_used_percent_bands.map((item) => item.count) ?? [],
 );
+const normalizedProvider = computed(() => filters.provider.trim());
+const normalizedAccountType = computed(() => filters.accountType.trim());
+const hasScopedFilters = computed(() => Boolean(normalizedProvider.value || normalizedAccountType.value));
+const scopeSummary = computed(() => {
+  const segments: string[] = [];
+
+  if (normalizedProvider.value) {
+    segments.push(`provider=${normalizedProvider.value}`);
+  }
+  if (normalizedAccountType.value) {
+    segments.push(`类型=${normalizedAccountType.value}`);
+  }
+
+  return segments.length ? segments.join(" / ") : "全部账号";
+});
 
 async function loadOverview() {
   loading.value = true;
   error.value = "";
 
   try {
-    overview.value = await getResearchOverview({ window_days: windowDays.value });
+    overview.value = await getResearchOverview({
+      window_days: windowDays.value,
+      provider: normalizedProvider.value || undefined,
+      account_type: normalizedAccountType.value || undefined,
+    });
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : "加载研究数据失败";
   } finally {
     loading.value = false;
   }
+}
+
+function resetFilters() {
+  filters.provider = "";
+  filters.accountType = "";
+  void loadOverview();
 }
 
 function bucketSummary(item: ResearchBucketCount) {
@@ -102,6 +131,24 @@ onMounted(() => {
       </div>
       <div class="filter-actions">
         <label>
+          <span class="subtle-label">Provider</span>
+          <input
+            v-model="filters.provider"
+            class="input-field"
+            placeholder="例如 openai"
+            @keyup.enter="loadOverview"
+          />
+        </label>
+        <label>
+          <span class="subtle-label">类型</span>
+          <input
+            v-model="filters.accountType"
+            class="input-field"
+            placeholder="例如 chatgpt"
+            @keyup.enter="loadOverview"
+          />
+        </label>
+        <label>
           <span class="subtle-label">窗口</span>
           <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
             <option :value="7">最近 7 天</option>
@@ -109,10 +156,12 @@ onMounted(() => {
             <option :value="30">最近 30 天</option>
           </select>
         </label>
+        <button v-if="hasScopedFilters" class="ghost-button" type="button" @click="resetFilters">清空筛选</button>
         <button class="ghost-button" type="button" @click="loadOverview">刷新</button>
       </div>
     </div>
 
+    <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
 
@@ -132,7 +181,7 @@ onMounted(() => {
       </div>
 
       <p v-if="overview.summary.became_401_events === 0" class="feedback">
-        当前历史库里还没有 `became_401` 事件。下面展示的是仍为非 `401` 账号的研究信号基线，只用于后续样本积累，不代表账号异常。
+        {{ hasScopedFilters ? "当前筛选范围内" : "当前历史库里" }} 还没有 `became_401` 事件。下面展示的是仍为非 `401` 账号的研究信号基线，只用于后续样本积累，不代表账号异常。
       </p>
 
       <div class="panel-grid">
@@ -193,7 +242,7 @@ onMounted(() => {
               {{ item.label }} · {{ formatCount(item.count) }} 次
             </p>
           </div>
-          <p v-else class="feedback">当前窗口内，前序正常样本没有留下稳定的 `status_message`。</p>
+          <p v-else class="feedback">当前窗口和筛选范围内，前序正常样本没有留下稳定的 `status_message`。</p>
         </article>
       </div>
 
@@ -226,7 +275,7 @@ onMounted(() => {
               {{ bucketSummary(item) }}
             </div>
           </div>
-          <p v-else class="feedback">当前仍为非 `401` 的账号里，还没有留下需要继续跟踪的研究信号。</p>
+          <p v-else class="feedback">当前筛选范围内仍为非 `401` 的账号里，还没有留下需要继续跟踪的研究信号。</p>
         </article>
       </div>
 
@@ -291,7 +340,7 @@ onMounted(() => {
             </tbody>
           </table>
         </div>
-        <p v-else class="feedback">当前窗口内还没有可供研究的组合样本。</p>
+        <p v-else class="feedback">当前窗口和筛选范围内还没有可供研究的组合样本。</p>
       </article>
 
       <article class="panel">
@@ -346,7 +395,7 @@ onMounted(() => {
             </div>
           </article>
         </div>
-        <p v-else class="feedback">当前窗口内还没有最近 401 样本可回放。</p>
+        <p v-else class="feedback">当前窗口和筛选范围内还没有最近 401 样本可回放。</p>
       </article>
 
       <article class="panel">
@@ -403,7 +452,7 @@ onMounted(() => {
             </div>
           </article>
         </div>
-        <p v-else class="feedback">当前没有需要额外追踪的非 `401` 研究样本。</p>
+        <p v-else class="feedback">当前筛选范围内没有需要额外追踪的非 `401` 研究样本。</p>
       </article>
     </template>
   </section>

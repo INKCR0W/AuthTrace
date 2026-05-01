@@ -25,8 +25,15 @@ router = APIRouter()
 def get_research_overview_api(
     db: Session = Depends(get_db_session),
     window_days: int = Query(default=7, ge=1, le=30),
+    provider: str | None = Query(default=None),
+    account_type: str | None = Query(default=None),
 ) -> ResearchOverviewResponse:
-    overview = get_research_overview(db, window_days=window_days)
+    overview = get_research_overview(
+        db,
+        window_days=window_days,
+        provider=provider,
+        account_type=account_type,
+    )
     return ResearchOverviewResponse(
         window_days=overview.window_days,
         summary=ResearchOverviewSummary.model_validate(overview.summary),

@@ -351,6 +351,281 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
     app.dependency_overrides.clear()
 
 
+def test_research_overview_api_applies_provider_and_account_type_filters() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=3),
+            scan_finished_at=base_time - timedelta(hours=3) + timedelta(minutes=3),
+            total_accounts=4,
+            eligible_accounts=4,
+            scanned_accounts=4,
+            success_accounts=4,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        openai_hot = Account(
+            source_id=source.id,
+            auth_index="auth-openai-hot",
+            name="OpenAI-Hot",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=10),
+            last_seen_at=base_time,
+        )
+        openai_ok = Account(
+            source_id=source.id,
+            auth_index="auth-openai-ok",
+            name="OpenAI-OK",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=10),
+            last_seen_at=base_time,
+        )
+        azure_hot = Account(
+            source_id=source.id,
+            auth_index="auth-azure-hot",
+            name="Azure-Hot",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=10),
+            last_seen_at=base_time,
+        )
+        openai_api = Account(
+            source_id=source.id,
+            auth_index="auth-openai-api",
+            name="OpenAI-API",
+            provider="openai",
+            account_type="api",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=10),
+            last_seen_at=base_time,
+        )
+        db.add_all([openai_hot, openai_ok, azure_hot, openai_api])
+        db.flush()
+
+        prev_openai_hot = AccountSnapshot(
+            account_id=openai_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=1, minutes=5),
+            created_at=base_time - timedelta(hours=1, minutes=5),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            short_used_percent=Decimal("88.00"),
+            remaining=Decimal("4.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="soft_block",
+        )
+        prev_azure_hot = AccountSnapshot(
+            account_id=azure_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=2, minutes=5),
+            created_at=base_time - timedelta(hours=2, minutes=5),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("52.00"),
+            short_used_percent=Decimal("91.00"),
+            remaining=Decimal("0.00"),
+            limit_reached=False,
+            allowed=True,
+        )
+        prev_openai_old = AccountSnapshot(
+            account_id=openai_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(days=3, minutes=10),
+            created_at=base_time - timedelta(days=3, minutes=10),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=None,
+            short_used_percent=None,
+            remaining=Decimal("12.00"),
+            limit_reached=False,
+            allowed=True,
+            status_message="warmup",
+        )
+        db.add_all([prev_openai_hot, prev_azure_hot, prev_openai_old])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=openai_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=1),
+                    related_snapshot_id=prev_openai_hot.id,
+                    previous_snapshot_id=prev_openai_hot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=1),
+                ),
+                AccountEvent(
+                    account_id=azure_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=2),
+                    related_snapshot_id=prev_azure_hot.id,
+                    previous_snapshot_id=prev_azure_hot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=2),
+                ),
+                AccountEvent(
+                    account_id=openai_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(days=3),
+                    related_snapshot_id=prev_openai_old.id,
+                    previous_snapshot_id=prev_openai_old.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(days=3),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&provider=openai&account_type=chatgpt",
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"] == {
+        "active_accounts": 2,
+        "current_401_accounts": 1,
+        "current_401_rate": 50.0,
+        "became_401_events": 2,
+        "affected_accounts": 1,
+        "affected_provider_groups": 1,
+        "sampled_previous_snapshots": 2,
+    }
+    assert payload["provider_account_type_breakdown"] == [
+        {
+            "label": "openai / chatgpt",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "total_accounts": 2,
+            "current_401_accounts": 1,
+            "current_401_rate": 50.0,
+            "became_401_events": 2,
+            "affected_accounts": 1,
+            "last_became_401_at": "2026-05-02T11:00:00Z",
+        }
+    ]
+    hour_map = {
+        item["hour_of_day"]: item["became_401_count"]
+        for item in payload["event_hour_distribution"]
+    }
+    assert hour_map[11] == 1
+    assert hour_map[12] == 1
+    assert hour_map[10] == 0
+
+    insights = payload["pre_401_insights"]
+    assert insights["sampled_events"] == 2
+    assert insights["events_with_previous_snapshot"] == 2
+    assert insights["weekly_used_percent_bands"] == [
+        {"key": "0_24", "label": "0-24%", "count": 0},
+        {"key": "25_49", "label": "25-49%", "count": 0},
+        {"key": "50_74", "label": "50-74%", "count": 0},
+        {"key": "75_89", "label": "75-89%", "count": 0},
+        {"key": "90_100", "label": "90-100%", "count": 1},
+        {"key": "missing", "label": "未记录", "count": 1},
+    ]
+    assert insights["short_used_percent_bands"] == [
+        {"key": "0_24", "label": "0-24%", "count": 0},
+        {"key": "25_49", "label": "25-49%", "count": 0},
+        {"key": "50_74", "label": "50-74%", "count": 0},
+        {"key": "75_89", "label": "75-89%", "count": 1},
+        {"key": "90_100", "label": "90-100%", "count": 0},
+        {"key": "missing", "label": "未记录", "count": 1},
+    ]
+    assert {item["key"]: item["count"] for item in insights["signal_breakdown"]} == {
+        "status_message_present": 2,
+        "allowed_false": 1,
+        "limit_reached": 1,
+        "weekly_ge_90": 1,
+    }
+    assert insights["top_status_messages"] == [
+        {"key": "soft_block", "label": "soft_block", "count": 1},
+        {"key": "warmup", "label": "warmup", "count": 1},
+    ]
+    assert [item["event_id"] for item in payload["recent_event_samples"]] == [1, 3]
+    assert payload["current_signal_baseline"] == {
+        "observed_accounts": 1,
+        "signal_accounts": 0,
+        "signal_breakdown": [],
+        "recent_samples": [],
+    }
+
+    app.dependency_overrides.clear()
+
+
 def test_research_overview_api_returns_current_signal_baseline_without_401_events() -> None:
     session_factory = _create_session_factory()
 
@@ -475,6 +750,137 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "current_limit_reached": True,
             "current_allowed": False,
             "status_message_excerpt": "usage limit reached on current window",
+            "signal_labels": [
+                "周额度 >= 90%",
+                "limit_reached=true",
+                "allowed=false",
+                "存在 status_message",
+            ],
+        }
+    ]
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_filters_current_signal_baseline() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        db.add_all(
+            [
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-openai",
+                    name="OpenAI-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_weekly_used_percent=Decimal("94.00"),
+                    current_limit_reached=True,
+                    current_allowed=False,
+                    status_message="rate limit",
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=3),
+                    last_seen_at=base_time,
+                ),
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-azure",
+                    name="Azure-Signal",
+                    provider="azure",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_weekly_used_percent=Decimal("96.00"),
+                    current_limit_reached=True,
+                    current_allowed=False,
+                    status_message="busy window",
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=3),
+                    last_seen_at=base_time,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7&provider=azure"))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"] == {
+        "active_accounts": 1,
+        "current_401_accounts": 0,
+        "current_401_rate": 0.0,
+        "became_401_events": 0,
+        "affected_accounts": 0,
+        "affected_provider_groups": 0,
+        "sampled_previous_snapshots": 0,
+    }
+    assert payload["provider_account_type_breakdown"] == [
+        {
+            "label": "azure / chatgpt",
+            "provider": "azure",
+            "account_type": "chatgpt",
+            "total_accounts": 1,
+            "current_401_accounts": 0,
+            "current_401_rate": 0.0,
+            "became_401_events": 0,
+            "affected_accounts": 0,
+            "last_became_401_at": None,
+        }
+    ]
+    assert payload["recent_event_samples"] == []
+    baseline = payload["current_signal_baseline"]
+    assert baseline["observed_accounts"] == 1
+    assert baseline["signal_accounts"] == 1
+    assert {item["key"]: item["count"] for item in baseline["signal_breakdown"]} == {
+        "allowed_false": 1,
+        "limit_reached": 1,
+        "status_message_present": 1,
+        "weekly_ge_90": 1,
+    }
+    assert baseline["recent_samples"] == [
+        {
+            "account_id": 2,
+            "account_name": "Azure-Signal",
+            "provider": "azure",
+            "account_type": "chatgpt",
+            "current_last_checked_at": "2026-05-02T12:00:00Z",
+            "current_weekly_used_percent": "96.00",
+            "current_short_used_percent": None,
+            "current_remaining": None,
+            "current_limit_reached": True,
+            "current_allowed": False,
+            "status_message_excerpt": "busy window",
             "signal_labels": [
                 "周额度 >= 90%",
                 "limit_reached=true",
