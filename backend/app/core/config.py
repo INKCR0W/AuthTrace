@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     management_token: str | None = Field(default=None, alias="AUTHTRACE_MANAGEMENT_TOKEN")
     management_timeout_seconds: float = Field(default=30.0, alias="AUTHTRACE_MANAGEMENT_TIMEOUT_SECONDS")
     management_probe_concurrency: int = Field(default=4, alias="AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY")
+    scheduler_enabled: bool = Field(default=False, alias="AUTHTRACE_SCHEDULER_ENABLED")
+    scheduler_interval_minutes: int = Field(default=15, alias="AUTHTRACE_SCHEDULER_INTERVAL_MINUTES")
     management_user_agent: str = Field(
         default="AuthTrace/0.1 (+https://local.authtrace)",
         alias="AUTHTRACE_MANAGEMENT_USER_AGENT",
@@ -103,6 +105,13 @@ class Settings(BaseSettings):
     def validate_probe_concurrency(cls, value: int) -> int:
         if value < 1:
             raise ValueError("management probe concurrency must be at least 1")
+        return value
+
+    @field_validator("scheduler_interval_minutes")
+    @classmethod
+    def validate_scheduler_interval_minutes(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("scheduler interval minutes must be at least 1")
         return value
 
     @property

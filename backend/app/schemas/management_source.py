@@ -12,3 +12,11 @@ class DefaultManagementSourceResponse(BaseModel):
     is_enabled: bool
     target_type: str | None = None
     provider: str | None = None
+    scheduler_enabled: bool
+    scheduler_running: bool
+    scheduler_interval_minutes: int
+    scheduler_next_run_at: str | None = None
+    scheduler_last_started_at: str | None = None
+    scheduler_last_finished_at: str | None = None
+    scheduler_last_status: str | None = None
+    scheduler_last_error_message: str | None = None

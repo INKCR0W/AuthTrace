@@ -29,6 +29,12 @@ uv run uvicorn app.main:app --reload
 - `GET /health`
 - `GET /api/v1/health`
 
+自动扫描配置：
+
+- `AUTHTRACE_SCHEDULER_ENABLED=true` 时，服务启动后会按固定间隔自动触发 `/api/v1/sync/auth-files`
+- `AUTHTRACE_SCHEDULER_INTERVAL_MINUTES` 用于控制扫描间隔，默认 `15`
+- 若未配置完整管理端地址或 token，自动扫描不会启动，扫描任务页会显示阻塞原因
+
 ## 常用命令
 
 ```powershell

@@ -192,6 +192,63 @@ function sourceConfigHint() {
   return "当前还未配置管理端地址；请先补齐 backend/.env 中的 AUTHTRACE_MANAGEMENT_BASE_URL 与 AUTHTRACE_MANAGEMENT_TOKEN。";
 }
 
+function schedulerTone() {
+  if (!source.value?.scheduler_enabled) {
+    return "muted";
+  }
+  if (source.value.scheduler_running) {
+    return "success";
+  }
+  if (source.value.scheduler_last_status === "blocked" || source.value.scheduler_last_status === "failed") {
+    return "warning";
+  }
+  return "muted";
+}
+
+function schedulerStatusText() {
+  if (!source.value?.scheduler_enabled) {
+    return "未启用";
+  }
+  if (source.value.scheduler_running) {
+    return "运行中";
+  }
+  if (source.value.scheduler_last_status === "blocked") {
+    return "待补配置";
+  }
+  if (source.value.scheduler_last_status === "failed") {
+    return "最近失败";
+  }
+  if (source.value.scheduler_last_status === "skipped_conflict") {
+    return "遇到冲突";
+  }
+  return "未启动";
+}
+
+function schedulerSummary() {
+  if (!source.value) {
+    return "正在等待调度状态...";
+  }
+
+  const intervalText = `每 ${formatCount(source.value.scheduler_interval_minutes)} 分钟`;
+  const nextRunText = source.value.scheduler_next_run_at
+    ? `下次 ${formatDateTime(source.value.scheduler_next_run_at)}`
+    : "暂无下次执行时间";
+  return `${intervalText} / ${nextRunText}`;
+}
+
+function schedulerLastResult() {
+  if (!source.value) {
+    return "";
+  }
+  if (source.value.scheduler_last_error_message) {
+    return source.value.scheduler_last_error_message;
+  }
+  if (source.value.scheduler_last_finished_at && source.value.scheduler_last_status) {
+    return `最近 ${source.value.scheduler_last_status} 于 ${formatDateTime(source.value.scheduler_last_finished_at)}`;
+  }
+  return "尚未产生自动扫描记录";
+}
+
 function clearTaskFilters() {
   filters.status = "";
   filters.trigger_mode = "";
@@ -343,6 +400,15 @@ onMounted(() => {
               <StatusPill :tone="source.is_enabled ? 'success' : 'muted'" :text="source.is_enabled ? '已启用' : '未启用'" />
             </div>
             <p class="subtle-line">{{ sourceScopeSummary() }}</p>
+          </div>
+          <div>
+            <p class="subtle-label">自动扫描</p>
+            <div class="status-stack">
+              <StatusPill :tone="schedulerTone()" :text="schedulerStatusText()" />
+              <StatusPill tone="muted" :text="`${source.scheduler_interval_minutes} min`" />
+            </div>
+            <p class="subtle-line">{{ schedulerSummary() }}</p>
+            <p class="subtle-line">{{ schedulerLastResult() }}</p>
           </div>
         </div>
 

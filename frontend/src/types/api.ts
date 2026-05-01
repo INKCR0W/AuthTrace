@@ -57,6 +57,14 @@ export interface DefaultManagementSourceResponse {
   is_enabled: boolean;
   target_type: string | null;
   provider: string | null;
+  scheduler_enabled: boolean;
+  scheduler_running: boolean;
+  scheduler_interval_minutes: number;
+  scheduler_next_run_at: string | null;
+  scheduler_last_started_at: string | null;
+  scheduler_last_finished_at: string | null;
+  scheduler_last_status: string | null;
+  scheduler_last_error_message: string | null;
 }
 
 export interface AuthFileSyncResponse {
