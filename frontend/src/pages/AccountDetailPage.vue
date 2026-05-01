@@ -5,8 +5,13 @@ import { useRoute } from "vue-router";
 import { getAccountDetail } from "@/api/client";
 import AccountUsageChart from "@/components/AccountUsageChart.vue";
 import StatusPill from "@/components/StatusPill.vue";
-import { formatDateTime, formatPercent, formatRemaining, formatStatusCode } from "@/lib/format";
-import type { AccountDetailResponse, AccountEventSummary, AccountSnapshotSummary } from "@/types/api";
+import { formatCount, formatDateTime, formatPercent, formatRemaining, formatStatusCode } from "@/lib/format";
+import type {
+  AccountCohortBreakdown,
+  AccountDetailResponse,
+  AccountEventSummary,
+  AccountSnapshotSummary,
+} from "@/types/api";
 
 
 const route = useRoute();
@@ -68,12 +73,38 @@ const eventTransitions = computed(() => (detail.value?.recent_events ?? []).map(
   previousSnapshot: event.previous_snapshot_id ? (snapshotById.value.get(event.previous_snapshot_id) ?? null) : null,
 })));
 
+const cohortCards = computed(() => {
+  if (!detail.value) {
+    return [];
+  }
+
+  return [
+    {
+      title: "同 provider",
+      kicker: detail.value.provider_cohort.label,
+      cohort: detail.value.provider_cohort,
+    },
+    {
+      title: "同账号类型",
+      kicker: detail.value.account_type_cohort.label,
+      cohort: detail.value.account_type_cohort,
+    },
+    {
+      title: "同 provider + 类型",
+      kicker: detail.value.provider_account_type_cohort.label,
+      cohort: detail.value.provider_account_type_cohort,
+    },
+  ];
+});
+
 const observationNotes = computed(() => {
   const notes: string[] = [];
   const latestBecame401 = eventTransitions.value.find((item) => item.event.event_type === "became_401");
   const failedSnapshots = recentSnapshots.value.filter((snapshot) => snapshot.snapshot_status !== "success");
   const highWeekly = recentSnapshots.value.filter((snapshot) => toNumber(snapshot.weekly_used_percent) >= 80).length;
   const highShort = recentSnapshots.value.filter((snapshot) => toNumber(snapshot.short_used_percent) >= 80).length;
+  const providerTypeCohort = detail.value?.provider_account_type_cohort ?? null;
+  const usagePosition = detail.value?.cohort_usage_position ?? null;
 
   if (latestBecame401?.previousSnapshot && latestBecame401.relatedSnapshot) {
     notes.push(
@@ -94,6 +125,29 @@ const observationNotes = computed(() => {
 
   if (failedSnapshots.length > 0) {
     notes.push(`当前窗口内有 ${failedSnapshots.length} 条非 success 快照，联调时需要同时关注管理端可用性与解析失败路径。`);
+  }
+
+  if (providerTypeCohort && providerTypeCohort.total_accounts > 0) {
+    notes.push(
+      [
+        `同组合当前共有 ${providerTypeCohort.total_accounts} 个账号`,
+        `当前 401 率 ${formatPercent(providerTypeCohort.current_401_rate)}`,
+        `额度异常率 ${formatPercent(providerTypeCohort.current_invalid_quota_rate)}`,
+        `24h 内新增 401 ${providerTypeCohort.became_401_events_last_24h} 次`,
+      ].join("，"),
+    );
+  }
+
+  if (usagePosition?.weekly_rank_desc && usagePosition.weekly_compared_accounts > 0) {
+    notes.push(
+      `当前账号周额度在同组合中位列第 ${usagePosition.weekly_rank_desc} / ${usagePosition.weekly_compared_accounts} 高，适合结合群体高压分布判断是否属于“个体先抬头”。`,
+    );
+  }
+
+  if (usagePosition?.short_rank_desc && usagePosition.short_compared_accounts > 0) {
+    notes.push(
+      `当前账号短周期额度在同组合中位列第 ${usagePosition.short_rank_desc} / ${usagePosition.short_compared_accounts} 高，可与最近 401 事件一起观察是否存在短时冲顶模式。`,
+    );
   }
 
   if (notes.length === 0) {
@@ -177,6 +231,28 @@ function snapshotTitle(snapshot: AccountSnapshotSummary | null, fallback: string
 function transitionSummary(event: AccountEventSummary) {
   return `${formatStatusCode(event.from_status_code)} -> ${formatStatusCode(event.to_status_code)}`;
 }
+
+function cohortTone(cohort: AccountCohortBreakdown) {
+  if (cohort.current_401_accounts > 0 || cohort.became_401_events_last_24h > 0) {
+    return "danger" as const;
+  }
+  if (
+    cohort.current_invalid_quota_accounts > 0
+    || cohort.quota_exhausted_events_last_24h > 0
+    || cohort.high_weekly_accounts > 0
+    || cohort.high_short_accounts > 0
+  ) {
+    return "warning" as const;
+  }
+  return "success" as const;
+}
+
+function usageRankLabel(rank: number | null, sampleCount: number) {
+  if (rank === null || sampleCount <= 0) {
+    return "当前组合没有足够样本";
+  }
+  return `第 ${rank} / ${sampleCount} 高`;
+}
 </script>
 
 <template>
@@ -255,6 +331,81 @@ function transitionSummary(event: AccountEventSummary) {
           <p class="subtle-line">{{ card.hint }}</p>
         </article>
       </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">归因</p>
+            <h3>同组风险对照</h3>
+          </div>
+        </div>
+
+        <div class="cohort-grid">
+          <article
+            v-for="item in cohortCards"
+            :key="item.title"
+            class="event-card cohort-card"
+            :data-tone="cohortTone(item.cohort)"
+          >
+            <div class="event-card-head">
+              <div>
+                <p class="section-kicker">{{ item.title }}</p>
+                <h4 class="cohort-title">{{ item.kicker }}</h4>
+              </div>
+              <StatusPill :tone="cohortTone(item.cohort)" :text="`${formatPercent(item.cohort.current_401_rate)} 401率`" />
+            </div>
+
+            <div class="mini-grid">
+              <div>
+                <p class="subtle-label">当前样本</p>
+                <p class="mini-value">{{ formatCount(item.cohort.total_accounts) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">24h 已检测</p>
+                <p class="mini-value">{{ formatCount(item.cohort.checked_accounts_last_24h) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">当前 401</p>
+                <p class="mini-value">{{ formatCount(item.cohort.current_401_accounts) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">当前额度异常</p>
+                <p class="mini-value">{{ formatCount(item.cohort.current_invalid_quota_accounts) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">24h 新增 401</p>
+                <p class="mini-value">{{ formatCount(item.cohort.became_401_events_last_24h) }}</p>
+              </div>
+              <div>
+                <p class="subtle-label">24h 新增额度异常</p>
+                <p class="mini-value">{{ formatCount(item.cohort.quota_exhausted_events_last_24h) }}</p>
+              </div>
+            </div>
+
+            <p class="subtle-line">
+              高压信号：周额度高压 {{ formatCount(item.cohort.high_weekly_accounts) }} 个，短周期高压 {{ formatCount(item.cohort.high_short_accounts) }} 个，受限 {{ formatCount(item.cohort.current_blocked_accounts) }} 个。
+            </p>
+          </article>
+        </div>
+
+        <div class="cohort-position-grid">
+          <section class="snapshot-brief">
+            <p class="section-kicker">周额度位置</p>
+            <h4>{{ usageRankLabel(detail.cohort_usage_position.weekly_rank_desc, detail.cohort_usage_position.weekly_compared_accounts) }}</h4>
+            <p class="subtle-line">
+              当前值 {{ formatPercent(detail.cohort_usage_position.weekly_used_percent) }}，样本 {{ formatCount(detail.cohort_usage_position.weekly_compared_accounts) }} 个。
+            </p>
+          </section>
+
+          <section class="snapshot-brief">
+            <p class="section-kicker">短周期位置</p>
+            <h4>{{ usageRankLabel(detail.cohort_usage_position.short_rank_desc, detail.cohort_usage_position.short_compared_accounts) }}</h4>
+            <p class="subtle-line">
+              当前值 {{ formatPercent(detail.cohort_usage_position.short_used_percent) }}，样本 {{ formatCount(detail.cohort_usage_position.short_compared_accounts) }} 个。
+            </p>
+          </section>
+        </div>
+      </article>
 
       <div class="panel-grid">
         <article class="panel chart-panel">

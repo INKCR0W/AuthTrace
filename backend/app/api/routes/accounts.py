@@ -7,10 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
 from app.models.account import Account
-from app.repositories.account import AccountListFilters, list_accounts as query_accounts
+from app.repositories.account import (
+    AccountListFilters,
+    get_account_research_summary,
+    list_accounts as query_accounts,
+)
 from app.repositories.account_event import list_recent_events_for_account
 from app.repositories.account_snapshot import list_recent_snapshots_for_account
 from app.schemas.account import (
+    AccountCohortBreakdown,
+    AccountCohortUsagePosition,
     AccountDetailResponse,
     AccountEventSummary,
     AccountListResponse,
@@ -70,10 +76,17 @@ def get_account_detail(
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在")
 
+    research_summary = get_account_research_summary(db, account=account)
     snapshots = list_recent_snapshots_for_account(db, account_id=account_id, limit=snapshot_limit)
     events = list_recent_events_for_account(db, account_id=account_id, limit=event_limit)
     return AccountDetailResponse(
         account=AccountSummary.model_validate(account),
         recent_snapshots=[AccountSnapshotSummary.model_validate(item) for item in snapshots],
         recent_events=[AccountEventSummary.model_validate(item) for item in events],
+        provider_cohort=AccountCohortBreakdown.model_validate(research_summary.provider_cohort),
+        account_type_cohort=AccountCohortBreakdown.model_validate(research_summary.account_type_cohort),
+        provider_account_type_cohort=AccountCohortBreakdown.model_validate(
+            research_summary.provider_account_type_cohort
+        ),
+        cohort_usage_position=AccountCohortUsagePosition.model_validate(research_summary.usage_position),
     )

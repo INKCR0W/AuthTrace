@@ -80,6 +80,39 @@ class AccountEventSummary(BaseModel):
     created_at: datetime
 
 
+class AccountCohortBreakdown(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str
+    provider: str | None = None
+    account_type: str | None = None
+    total_accounts: int
+    active_accounts: int
+    disabled_accounts: int
+    current_401_accounts: int
+    current_invalid_quota_accounts: int
+    became_401_events_last_24h: int
+    quota_exhausted_events_last_24h: int
+    checked_accounts_last_24h: int
+    high_weekly_accounts: int
+    high_short_accounts: int
+    current_limit_reached_accounts: int
+    current_blocked_accounts: int
+    current_401_rate: float
+    current_invalid_quota_rate: float
+
+
+class AccountCohortUsagePosition(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    weekly_compared_accounts: int
+    weekly_used_percent: Decimal | None = None
+    weekly_rank_desc: int | None = None
+    short_compared_accounts: int
+    short_used_percent: Decimal | None = None
+    short_rank_desc: int | None = None
+
+
 class AccountListResponse(BaseModel):
     total: int
     limit: int
@@ -91,3 +124,7 @@ class AccountDetailResponse(BaseModel):
     account: AccountSummary
     recent_snapshots: list[AccountSnapshotSummary] = Field(default_factory=list)
     recent_events: list[AccountEventSummary] = Field(default_factory=list)
+    provider_cohort: AccountCohortBreakdown
+    account_type_cohort: AccountCohortBreakdown
+    provider_account_type_cohort: AccountCohortBreakdown
+    cohort_usage_position: AccountCohortUsagePosition

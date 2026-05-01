@@ -121,6 +121,35 @@ export interface AccountEventSummary {
   created_at: string;
 }
 
+export interface AccountCohortBreakdown {
+  label: string;
+  provider: string | null;
+  account_type: string | null;
+  total_accounts: number;
+  active_accounts: number;
+  disabled_accounts: number;
+  current_401_accounts: number;
+  current_invalid_quota_accounts: number;
+  became_401_events_last_24h: number;
+  quota_exhausted_events_last_24h: number;
+  checked_accounts_last_24h: number;
+  high_weekly_accounts: number;
+  high_short_accounts: number;
+  current_limit_reached_accounts: number;
+  current_blocked_accounts: number;
+  current_401_rate: number;
+  current_invalid_quota_rate: number;
+}
+
+export interface AccountCohortUsagePosition {
+  weekly_compared_accounts: number;
+  weekly_used_percent: string | null;
+  weekly_rank_desc: number | null;
+  short_compared_accounts: number;
+  short_used_percent: string | null;
+  short_rank_desc: number | null;
+}
+
 export interface AccountListResponse {
   total: number;
   limit: number;
@@ -132,6 +161,10 @@ export interface AccountDetailResponse {
   account: AccountSummary;
   recent_snapshots: AccountSnapshotSummary[];
   recent_events: AccountEventSummary[];
+  provider_cohort: AccountCohortBreakdown;
+  account_type_cohort: AccountCohortBreakdown;
+  provider_account_type_cohort: AccountCohortBreakdown;
+  cohort_usage_position: AccountCohortUsagePosition;
 }
 
 export interface EventListItem {

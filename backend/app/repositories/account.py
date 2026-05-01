@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models.account import Account
+from app.models.account_event import AccountEvent
 
 
 @dataclass(slots=True)
@@ -50,6 +52,45 @@ class AccountListFilters:
     offset: int = 0
 
 
+@dataclass(slots=True)
+class AccountCohortBreakdown:
+    label: str
+    provider: str | None
+    account_type: str | None
+    total_accounts: int
+    active_accounts: int
+    disabled_accounts: int
+    current_401_accounts: int
+    current_invalid_quota_accounts: int
+    became_401_events_last_24h: int
+    quota_exhausted_events_last_24h: int
+    checked_accounts_last_24h: int
+    high_weekly_accounts: int
+    high_short_accounts: int
+    current_limit_reached_accounts: int
+    current_blocked_accounts: int
+    current_401_rate: float
+    current_invalid_quota_rate: float
+
+
+@dataclass(slots=True)
+class AccountCohortUsagePosition:
+    weekly_compared_accounts: int
+    weekly_used_percent: Decimal | None
+    weekly_rank_desc: int | None
+    short_compared_accounts: int
+    short_used_percent: Decimal | None
+    short_rank_desc: int | None
+
+
+@dataclass(slots=True)
+class AccountResearchSummary:
+    provider_cohort: AccountCohortBreakdown
+    account_type_cohort: AccountCohortBreakdown
+    provider_account_type_cohort: AccountCohortBreakdown
+    usage_position: AccountCohortUsagePosition
+
+
 def list_accounts(
     db: Session,
     *,
@@ -67,6 +108,53 @@ def list_accounts(
     )
     total = int(db.scalar(filtered_count_statement) or 0)
     return items, total
+
+
+def get_account_research_summary(
+    db: Session,
+    *,
+    account: Account,
+) -> AccountResearchSummary:
+    last_24h_start = datetime.now(timezone.utc) - timedelta(hours=24)
+    provider_label = account.provider or "未标记 provider"
+    account_type_label = account.account_type or "未标记类型"
+
+    return AccountResearchSummary(
+        provider_cohort=_build_account_cohort_breakdown(
+            db,
+            label=provider_label,
+            provider=account.provider,
+            account_type=None,
+            last_24h_start=last_24h_start,
+            match_provider=True,
+            match_account_type=False,
+        ),
+        account_type_cohort=_build_account_cohort_breakdown(
+            db,
+            label=account_type_label,
+            provider=None,
+            account_type=account.account_type,
+            last_24h_start=last_24h_start,
+            match_provider=False,
+            match_account_type=True,
+        ),
+        provider_account_type_cohort=_build_account_cohort_breakdown(
+            db,
+            label=f"{provider_label} / {account_type_label}",
+            provider=account.provider,
+            account_type=account.account_type,
+            last_24h_start=last_24h_start,
+            match_provider=True,
+            match_account_type=True,
+        ),
+        usage_position=_build_usage_position(
+            db,
+            provider=account.provider,
+            account_type=account.account_type,
+            weekly_used_percent=account.current_weekly_used_percent,
+            short_used_percent=account.current_short_used_percent,
+        ),
+    )
 
 
 def sync_accounts_from_auth_files(
@@ -157,6 +245,124 @@ def _apply_account_filters(statement: Select, *, filters: AccountListFilters) ->
     return statement
 
 
+def _build_account_cohort_breakdown(
+    db: Session,
+    *,
+    label: str,
+    provider: str | None,
+    account_type: str | None,
+    last_24h_start: datetime,
+    match_provider: bool,
+    match_account_type: bool,
+) -> AccountCohortBreakdown:
+    account_conditions = [Account.source_deleted_at.is_(None)]
+    if match_provider:
+        account_conditions.append(_match_optional_text(Account.provider, provider))
+    if match_account_type:
+        account_conditions.append(_match_optional_text(Account.account_type, account_type))
+
+    account_row = db.execute(
+        select(
+            func.count(Account.id).label("total_accounts"),
+            func.sum(case((Account.disabled.is_(False), 1), else_=0)).label("active_accounts"),
+            func.sum(case((Account.disabled.is_(True), 1), else_=0)).label("disabled_accounts"),
+            func.sum(case((Account.current_is_401.is_(True), 1), else_=0)).label("current_401_accounts"),
+            func.sum(
+                case((Account.current_invalid_quota.is_(True), 1), else_=0)
+            ).label("current_invalid_quota_accounts"),
+            func.sum(
+                case((Account.current_last_checked_at >= last_24h_start, 1), else_=0)
+            ).label("checked_accounts_last_24h"),
+            func.sum(
+                case((Account.current_weekly_used_percent >= 80, 1), else_=0)
+            ).label("high_weekly_accounts"),
+            func.sum(
+                case((Account.current_short_used_percent >= 80, 1), else_=0)
+            ).label("high_short_accounts"),
+            func.sum(
+                case((Account.current_limit_reached.is_(True), 1), else_=0)
+            ).label("current_limit_reached_accounts"),
+            func.sum(
+                case((Account.current_allowed.is_(False), 1), else_=0)
+            ).label("current_blocked_accounts"),
+        ).where(*account_conditions)
+    ).one()
+
+    event_rows = db.execute(
+        select(
+            AccountEvent.event_type,
+            func.count(AccountEvent.id).label("event_count"),
+        )
+        .select_from(AccountEvent)
+        .join(Account, Account.id == AccountEvent.account_id)
+        .where(
+            *account_conditions,
+            AccountEvent.event_time >= last_24h_start,
+            AccountEvent.event_type.in_(("became_401", "quota_exhausted")),
+        )
+        .group_by(AccountEvent.event_type)
+    ).all()
+    event_counts = {str(row.event_type): int(row.event_count or 0) for row in event_rows}
+
+    total_accounts = int(account_row.total_accounts or 0)
+    current_401_accounts = int(account_row.current_401_accounts or 0)
+    current_invalid_quota_accounts = int(account_row.current_invalid_quota_accounts or 0)
+
+    return AccountCohortBreakdown(
+        label=label,
+        provider=provider,
+        account_type=account_type,
+        total_accounts=total_accounts,
+        active_accounts=int(account_row.active_accounts or 0),
+        disabled_accounts=int(account_row.disabled_accounts or 0),
+        current_401_accounts=current_401_accounts,
+        current_invalid_quota_accounts=current_invalid_quota_accounts,
+        became_401_events_last_24h=event_counts.get("became_401", 0),
+        quota_exhausted_events_last_24h=event_counts.get("quota_exhausted", 0),
+        checked_accounts_last_24h=int(account_row.checked_accounts_last_24h or 0),
+        high_weekly_accounts=int(account_row.high_weekly_accounts or 0),
+        high_short_accounts=int(account_row.high_short_accounts or 0),
+        current_limit_reached_accounts=int(account_row.current_limit_reached_accounts or 0),
+        current_blocked_accounts=int(account_row.current_blocked_accounts or 0),
+        current_401_rate=_to_rate_percent(
+            numerator=current_401_accounts,
+            denominator=total_accounts,
+        ),
+        current_invalid_quota_rate=_to_rate_percent(
+            numerator=current_invalid_quota_accounts,
+            denominator=total_accounts,
+        ),
+    )
+
+
+def _build_usage_position(
+    db: Session,
+    *,
+    provider: str | None,
+    account_type: str | None,
+    weekly_used_percent: Decimal | None,
+    short_used_percent: Decimal | None,
+) -> AccountCohortUsagePosition:
+    statement = select(Account.current_weekly_used_percent, Account.current_short_used_percent).where(
+        Account.source_deleted_at.is_(None),
+        Account.disabled.is_(False),
+        _match_optional_text(Account.provider, provider),
+        _match_optional_text(Account.account_type, account_type),
+    )
+    peer_rows = db.execute(statement).all()
+    weekly_values = [row.current_weekly_used_percent for row in peer_rows if row.current_weekly_used_percent is not None]
+    short_values = [row.current_short_used_percent for row in peer_rows if row.current_short_used_percent is not None]
+
+    return AccountCohortUsagePosition(
+        weekly_compared_accounts=len(weekly_values),
+        weekly_used_percent=weekly_used_percent,
+        weekly_rank_desc=_rank_desc(values=weekly_values, current_value=weekly_used_percent),
+        short_compared_accounts=len(short_values),
+        short_used_percent=short_used_percent,
+        short_rank_desc=_rank_desc(values=short_values, current_value=short_used_percent),
+    )
+
+
 def _extract_item_type(item: dict[str, Any]) -> str | None:
     return _normalize_optional_text(item.get("type")) or _normalize_optional_text(item.get("typo"))
 
@@ -208,3 +414,26 @@ def _stringify_text_value(value: Any) -> str | None:
         normalized = value.strip()
         return normalized or None
     return json.dumps(value, ensure_ascii=False)
+
+
+def _match_optional_text(column: Any, value: str | None) -> Any:
+    if value is None:
+        return column.is_(None)
+    return column == value
+
+
+def _to_rate_percent(*, numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((numerator / denominator) * 100, 2)
+
+
+def _rank_desc(
+    *,
+    values: list[Decimal],
+    current_value: Decimal | None,
+) -> int | None:
+    if current_value is None or not values:
+        return None
+    higher_count = sum(1 for value in values if value > current_value)
+    return higher_count + 1

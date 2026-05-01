@@ -745,6 +745,301 @@ def test_account_and_event_query_apis_return_timeline_data() -> None:
     assert detail_payload["recent_snapshots"][0]["probe_status_code"] == 401
     assert len(detail_payload["recent_events"]) == 1
     assert detail_payload["recent_events"][0]["event_type"] == "became_401"
+    assert detail_payload["provider_cohort"]["total_accounts"] == 1
+    assert detail_payload["provider_cohort"]["current_401_accounts"] == 1
+    assert detail_payload["account_type_cohort"]["total_accounts"] == 1
+    assert detail_payload["provider_account_type_cohort"]["became_401_events_last_24h"] == 1
+    assert detail_payload["cohort_usage_position"]["weekly_compared_accounts"] == 0
+    assert detail_payload["cohort_usage_position"]["weekly_rank_desc"] is None
+
+    app.dependency_overrides.clear()
+
+
+def test_account_detail_returns_cohort_research_summary() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+        AUTHTRACE_MANAGEMENT_TARGET_TYPE="chatgpt",
+        AUTHTRACE_MANAGEMENT_PROVIDER="openai",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        alpha = Account(
+            source_id=source.id,
+            auth_index="auth-1",
+            name="Alpha",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_status_code=200,
+            current_is_401=False,
+            current_invalid_quota=False,
+            current_weekly_used_percent=90,
+            current_short_used_percent=60,
+            current_limit_reached=False,
+            current_allowed=True,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+        )
+        beta = Account(
+            source_id=source.id,
+            auth_index="auth-2",
+            name="Beta",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_status_code=401,
+            current_is_401=True,
+            current_invalid_quota=True,
+            current_weekly_used_percent=85,
+            current_short_used_percent=20,
+            current_limit_reached=True,
+            current_allowed=False,
+            current_last_checked_at=base_time - timedelta(hours=1),
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+        )
+        gamma = Account(
+            source_id=source.id,
+            auth_index="auth-3",
+            name="Gamma",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=True,
+            current_status_code=200,
+            current_is_401=False,
+            current_invalid_quota=False,
+            current_weekly_used_percent=40,
+            current_last_checked_at=base_time - timedelta(hours=2),
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+        )
+        delta = Account(
+            source_id=source.id,
+            auth_index="auth-4",
+            name="Delta",
+            provider="openai",
+            account_type="claude",
+            disabled=False,
+            current_status_code=200,
+            current_is_401=False,
+            current_invalid_quota=False,
+            current_weekly_used_percent=95,
+            current_short_used_percent=90,
+            current_last_checked_at=base_time - timedelta(hours=3),
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+        )
+        epsilon = Account(
+            source_id=source.id,
+            auth_index="auth-5",
+            name="Epsilon",
+            provider="anthropic",
+            account_type="chatgpt",
+            disabled=False,
+            current_status_code=200,
+            current_is_401=False,
+            current_invalid_quota=True,
+            current_weekly_used_percent=30,
+            current_short_used_percent=50,
+            current_last_checked_at=base_time - timedelta(hours=4),
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+        )
+        zeta = Account(
+            source_id=source.id,
+            auth_index="auth-6",
+            name="Zeta",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_status_code=200,
+            current_is_401=False,
+            current_invalid_quota=False,
+            current_weekly_used_percent=100,
+            current_short_used_percent=100,
+            current_last_checked_at=base_time - timedelta(hours=5),
+            first_seen_at=base_time,
+            last_seen_at=base_time,
+            source_deleted_at=base_time,
+        )
+        db.add_all([alpha, beta, gamma, delta, epsilon, zeta])
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="manual",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=1),
+            scan_finished_at=base_time - timedelta(hours=1) + timedelta(minutes=1),
+        )
+        db.add(scan_job)
+        db.flush()
+
+        beta_snapshot = AccountSnapshot(
+            account_id=beta.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=1),
+            snapshot_status="success",
+            probe_status_code=401,
+            is_401=True,
+            invalid_quota=True,
+            raw_auth_file_json={"disabled": False},
+            raw_usage_json={"detail": "unauthorized"},
+            created_at=base_time - timedelta(hours=1),
+        )
+        db.add(beta_snapshot)
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=beta.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=1),
+                    related_snapshot_id=beta_snapshot.id,
+                    previous_snapshot_id=None,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_invalid_quota=False,
+                    to_invalid_quota=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=1),
+                ),
+                AccountEvent(
+                    account_id=beta.id,
+                    event_type="quota_exhausted",
+                    event_time=base_time - timedelta(minutes=30),
+                    related_snapshot_id=beta_snapshot.id,
+                    previous_snapshot_id=None,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_invalid_quota=False,
+                    to_invalid_quota=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=30),
+                ),
+                AccountEvent(
+                    account_id=delta.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(days=2),
+                    related_snapshot_id=beta_snapshot.id,
+                    previous_snapshot_id=None,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_invalid_quota=False,
+                    to_invalid_quota=False,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(days=2),
+                ),
+            ]
+        )
+        db.commit()
+
+        alpha_id = alpha.id
+
+    response = asyncio.run(_request("GET", f"/api/v1/accounts/{alpha_id}"))
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["provider_cohort"] == {
+        "label": "openai",
+        "provider": "openai",
+        "account_type": None,
+        "total_accounts": 4,
+        "active_accounts": 3,
+        "disabled_accounts": 1,
+        "current_401_accounts": 1,
+        "current_invalid_quota_accounts": 1,
+        "became_401_events_last_24h": 1,
+        "quota_exhausted_events_last_24h": 1,
+        "checked_accounts_last_24h": 4,
+        "high_weekly_accounts": 3,
+        "high_short_accounts": 1,
+        "current_limit_reached_accounts": 1,
+        "current_blocked_accounts": 1,
+        "current_401_rate": 25.0,
+        "current_invalid_quota_rate": 25.0,
+    }
+    assert payload["account_type_cohort"] == {
+        "label": "chatgpt",
+        "provider": None,
+        "account_type": "chatgpt",
+        "total_accounts": 4,
+        "active_accounts": 3,
+        "disabled_accounts": 1,
+        "current_401_accounts": 1,
+        "current_invalid_quota_accounts": 2,
+        "became_401_events_last_24h": 1,
+        "quota_exhausted_events_last_24h": 1,
+        "checked_accounts_last_24h": 4,
+        "high_weekly_accounts": 2,
+        "high_short_accounts": 0,
+        "current_limit_reached_accounts": 1,
+        "current_blocked_accounts": 1,
+        "current_401_rate": 25.0,
+        "current_invalid_quota_rate": 50.0,
+    }
+    assert payload["provider_account_type_cohort"] == {
+        "label": "openai / chatgpt",
+        "provider": "openai",
+        "account_type": "chatgpt",
+        "total_accounts": 3,
+        "active_accounts": 2,
+        "disabled_accounts": 1,
+        "current_401_accounts": 1,
+        "current_invalid_quota_accounts": 1,
+        "became_401_events_last_24h": 1,
+        "quota_exhausted_events_last_24h": 1,
+        "checked_accounts_last_24h": 3,
+        "high_weekly_accounts": 2,
+        "high_short_accounts": 0,
+        "current_limit_reached_accounts": 1,
+        "current_blocked_accounts": 1,
+        "current_401_rate": 33.33,
+        "current_invalid_quota_rate": 33.33,
+    }
+    assert payload["cohort_usage_position"] == {
+        "weekly_compared_accounts": 2,
+        "weekly_used_percent": "90.00",
+        "weekly_rank_desc": 1,
+        "short_compared_accounts": 2,
+        "short_used_percent": "60.00",
+        "short_rank_desc": 1,
+    }
 
     app.dependency_overrides.clear()
 
