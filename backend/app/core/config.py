@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -11,7 +12,7 @@ class Settings(BaseSettings):
     env: str = Field(default="development", alias="AUTHTRACE_ENV")
     debug: bool = Field(default=False, alias="AUTHTRACE_DEBUG")
     api_v1_prefix: str = Field(default="/api/v1", alias="AUTHTRACE_API_V1_PREFIX")
-    cors_allowed_origins: tuple[str, ...] = Field(
+    cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = Field(
         default=("http://localhost:5173", "http://127.0.0.1:5173"),
         alias="AUTHTRACE_CORS_ALLOWED_ORIGINS",
     )

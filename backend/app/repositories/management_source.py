@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -23,7 +24,20 @@ def ensure_default_management_source(db: Session, settings: Settings) -> Managem
             is_enabled=True,
         )
         db.add(source)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            source = db.scalar(
+                select(ManagementSource).where(ManagementSource.source_key == settings.management_source_key)
+            )
+            if source is None:
+                raise
+            source.source_name = settings.management_source_name
+            source.base_url = settings.management_base_url
+            source.description = settings.management_source_description
+            source.is_enabled = True
+            db.flush()
         return source
 
     source.source_name = settings.management_source_name
