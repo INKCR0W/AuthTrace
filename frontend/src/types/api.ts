@@ -327,4 +327,6 @@ export interface EventListResponse {
 
 export interface EventDetailResponse {
   item: EventListItem;
+  context_snapshots: AccountSnapshotSummary[];
+  context_events: AccountEventSummary[];
 }

@@ -74,6 +74,25 @@ def list_recent_events_for_account(
     return list(db.scalars(statement).all())
 
 
+def list_recent_events_for_account_until(
+    db: Session,
+    *,
+    account_id: int,
+    event_time_to: datetime,
+    limit: int,
+) -> list[AccountEvent]:
+    statement = (
+        select(AccountEvent)
+        .where(
+            AccountEvent.account_id == account_id,
+            AccountEvent.event_time <= event_time_to,
+        )
+        .order_by(AccountEvent.event_time.desc(), AccountEvent.id.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(statement).all())
+
+
 def _build_event_detail_statement(
     *,
     previous_snapshot: AccountSnapshot,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,25 @@ def list_recent_snapshots_for_account(
     statement = (
         select(AccountSnapshot)
         .where(AccountSnapshot.account_id == account_id)
+        .order_by(AccountSnapshot.checked_at.desc(), AccountSnapshot.id.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(statement).all())
+
+
+def list_recent_snapshots_for_account_until(
+    db: Session,
+    *,
+    account_id: int,
+    checked_at_to: datetime,
+    limit: int,
+) -> list[AccountSnapshot]:
+    statement = (
+        select(AccountSnapshot)
+        .where(
+            AccountSnapshot.account_id == account_id,
+            AccountSnapshot.checked_at <= checked_at_to,
+        )
         .order_by(AccountSnapshot.checked_at.desc(), AccountSnapshot.id.desc())
         .limit(limit)
     )

@@ -4,6 +4,7 @@ import type {
   AuthFileSyncResponse,
   DashboardOverviewResponse,
   DefaultManagementSourceResponse,
+  EventDetailResponse,
   EventListResponse,
   ScanJobDetailResponse,
   ScanJobListResponse,
@@ -116,6 +117,10 @@ export function getAccounts(query?: Record<string, QueryValue>) {
 
 export function getEvents(query?: Record<string, QueryValue>) {
   return requestJson<EventListResponse>("api/v1/events", { query });
+}
+
+export function getEventDetail(eventId: number, query?: Record<string, QueryValue>) {
+  return requestJson<EventDetailResponse>(`api/v1/events/${eventId}`, { query });
 }
 
 export function getAccountDetail(accountId: number, query?: Record<string, QueryValue>) {

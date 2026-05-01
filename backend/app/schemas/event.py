@@ -21,3 +21,5 @@ class EventListResponse(BaseModel):
 
 class EventDetailResponse(BaseModel):
     item: EventListItem
+    context_snapshots: list[AccountSnapshotSummary] = Field(default_factory=list)
+    context_events: list[AccountEventSummary] = Field(default_factory=list)

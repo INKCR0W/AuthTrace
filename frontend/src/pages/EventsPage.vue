@@ -91,14 +91,24 @@ onMounted(() => {
           <div class="event-card-head">
             <div>
               <p class="event-type">{{ item.event.event_type }}</p>
-              <RouterLink class="inline-link event-title" :to="`/accounts/${item.account.id}`">
+              <RouterLink class="inline-link event-title" :to="`/events/${item.event.id}`">
                 {{ item.account.name }}
               </RouterLink>
+              <p class="subtle-line">
+                <RouterLink class="inline-link" :to="`/accounts/${item.account.id}`">
+                  查看账号详情
+                </RouterLink>
+              </p>
             </div>
-            <StatusPill
-              :tone="item.event.to_is_401 ? 'danger' : item.event.to_invalid_quota ? 'warning' : 'success'"
-              :text="formatDateTime(item.event.event_time)"
-            />
+            <div class="status-stack">
+              <StatusPill
+                :tone="item.event.to_is_401 ? 'danger' : item.event.to_invalid_quota ? 'warning' : 'success'"
+                :text="formatDateTime(item.event.event_time)"
+              />
+              <RouterLink class="nav-tab compact-button" :to="`/events/${item.event.id}`">
+                查看事件
+              </RouterLink>
+            </div>
           </div>
 
           <div class="event-grid">

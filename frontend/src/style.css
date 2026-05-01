@@ -340,6 +340,14 @@ select {
   grid-template-columns: 1.15fr 1fr;
 }
 
+.event-detail-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.event-context-grid {
+  grid-template-columns: 1.2fr 0.9fr;
+}
+
 .transition-card {
   padding: 18px;
   border-radius: 22px;

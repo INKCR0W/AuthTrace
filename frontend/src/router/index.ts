@@ -20,6 +20,11 @@ const router = createRouter({
       component: () => import("@/pages/EventsPage.vue"),
     },
     {
+      path: "/events/:eventId",
+      name: "event-detail",
+      component: () => import("@/pages/EventDetailPage.vue"),
+    },
+    {
       path: "/scan-jobs",
       name: "scan-jobs",
       component: () => import("@/pages/ScanJobsPage.vue"),

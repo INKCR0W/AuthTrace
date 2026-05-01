@@ -1757,6 +1757,168 @@ def test_scan_job_query_apis_return_paginated_runs_and_error_details() -> None:
     app.dependency_overrides.clear()
 
 
+def test_event_detail_api_returns_event_context_snapshots_and_events() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        account = Account(
+            source_id=source.id,
+            auth_index="auth-1",
+            name="Alpha",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_status_code=200,
+            current_is_401=False,
+            current_last_checked_at=base_time + timedelta(minutes=10),
+            first_seen_at=base_time,
+            last_seen_at=base_time + timedelta(minutes=10),
+        )
+        db.add(account)
+        db.flush()
+
+        first_scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="manual",
+            status="success",
+            scan_started_at=base_time,
+            scan_finished_at=base_time + timedelta(minutes=1),
+        )
+        second_scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="manual",
+            status="success",
+            scan_started_at=base_time + timedelta(minutes=4),
+            scan_finished_at=base_time + timedelta(minutes=5),
+        )
+        third_scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time + timedelta(minutes=9),
+            scan_finished_at=base_time + timedelta(minutes=10),
+        )
+        db.add_all([first_scan_job, second_scan_job, third_scan_job])
+        db.flush()
+
+        healthy_snapshot = AccountSnapshot(
+            account_id=account.id,
+            scan_job_id=first_scan_job.id,
+            checked_at=base_time + timedelta(minutes=1),
+            created_at=base_time + timedelta(minutes=1),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("72.00"),
+            raw_auth_file_json={"disabled": False},
+            raw_usage_json={"detail": "healthy"},
+        )
+        became_401_snapshot = AccountSnapshot(
+            account_id=account.id,
+            scan_job_id=second_scan_job.id,
+            checked_at=base_time + timedelta(minutes=5),
+            created_at=base_time + timedelta(minutes=5),
+            snapshot_status="success",
+            probe_status_code=401,
+            is_401=True,
+            raw_auth_file_json={"disabled": False},
+            raw_usage_json={"detail": "unauthorized"},
+        )
+        recovered_snapshot = AccountSnapshot(
+            account_id=account.id,
+            scan_job_id=third_scan_job.id,
+            checked_at=base_time + timedelta(minutes=10),
+            created_at=base_time + timedelta(minutes=10),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("41.00"),
+            raw_auth_file_json={"disabled": False},
+            raw_usage_json={"detail": "recovered"},
+        )
+        db.add_all([healthy_snapshot, became_401_snapshot, recovered_snapshot])
+        db.flush()
+
+        became_401_event = AccountEvent(
+            account_id=account.id,
+            event_type="became_401",
+            event_time=became_401_snapshot.checked_at,
+            related_snapshot_id=became_401_snapshot.id,
+            previous_snapshot_id=healthy_snapshot.id,
+            from_status_code=200,
+            to_status_code=401,
+            from_is_401=False,
+            to_is_401=True,
+            from_disabled=False,
+            to_disabled=False,
+            created_at=became_401_snapshot.checked_at,
+        )
+        recovered_event = AccountEvent(
+            account_id=account.id,
+            event_type="recovered_from_401",
+            event_time=recovered_snapshot.checked_at,
+            related_snapshot_id=recovered_snapshot.id,
+            previous_snapshot_id=became_401_snapshot.id,
+            from_status_code=401,
+            to_status_code=200,
+            from_is_401=True,
+            to_is_401=False,
+            from_disabled=False,
+            to_disabled=False,
+            created_at=recovered_snapshot.checked_at,
+        )
+        db.add_all([became_401_event, recovered_event])
+        db.commit()
+        became_401_event_id = became_401_event.id
+        first_scan_job_id = first_scan_job.id
+        second_scan_job_id = second_scan_job.id
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            f"/api/v1/events/{became_401_event_id}?snapshot_limit=3&event_limit=3",
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item"]["event"]["event_type"] == "became_401"
+    assert payload["item"]["related_snapshot"]["raw_usage_json"] == {"detail": "unauthorized"}
+    assert payload["item"]["previous_snapshot"]["raw_usage_json"] == {"detail": "healthy"}
+    assert [snapshot["probe_status_code"] for snapshot in payload["context_snapshots"]] == [401, 200]
+    assert payload["context_snapshots"][0]["scan_job_id"] == second_scan_job_id
+    assert payload["context_snapshots"][1]["scan_job_id"] == first_scan_job_id
+    assert [event["event_type"] for event in payload["context_events"]] == ["became_401"]
+
+    app.dependency_overrides.clear()
+
+
 def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
     session_factory = _create_session_factory()
 

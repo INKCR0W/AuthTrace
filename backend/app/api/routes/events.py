@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.account_event import EventListFilters, get_event_detail, list_events
+from app.repositories.account_event import (
+    EventListFilters,
+    get_event_detail,
+    list_events,
+    list_recent_events_for_account_until,
+)
+from app.repositories.account_snapshot import list_recent_snapshots_for_account_until
 from app.schemas.account import AccountEventSummary, AccountSnapshotSummary, AccountSummary
 from app.schemas.event import EventDetailResponse, EventListItem, EventListResponse
 
@@ -65,12 +71,26 @@ def get_events(
 def get_event(
     event_id: int,
     db: Session = Depends(get_db_session),
+    snapshot_limit: int = Query(default=6, ge=1, le=50),
+    event_limit: int = Query(default=6, ge=1, le=50),
 ) -> EventDetailResponse:
     result = get_event_detail(db, event_id=event_id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="事件不存在")
 
     event, account, related_snapshot, previous_snapshot = result
+    context_snapshots = list_recent_snapshots_for_account_until(
+        db,
+        account_id=account.id,
+        checked_at_to=related_snapshot.checked_at,
+        limit=snapshot_limit,
+    )
+    context_events = list_recent_events_for_account_until(
+        db,
+        account_id=account.id,
+        event_time_to=event.event_time,
+        limit=event_limit,
+    )
     return EventDetailResponse(
         item=EventListItem(
             event=AccountEventSummary.model_validate(event),
@@ -81,5 +101,13 @@ def get_event(
                 if previous_snapshot is not None
                 else None
             ),
-        )
+        ),
+        context_snapshots=[
+            AccountSnapshotSummary.model_validate(snapshot)
+            for snapshot in context_snapshots
+        ],
+        context_events=[
+            AccountEventSummary.model_validate(context_event)
+            for context_event in context_events
+        ],
     )
