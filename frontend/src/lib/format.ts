@@ -53,6 +53,24 @@ export function formatDurationMs(value: number | null | undefined) {
   return `${(seconds / 60).toFixed(1)} min`;
 }
 
+export function formatMinutesSpan(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "未记录";
+  }
+
+  if (value < 60) {
+    return `${value} 分钟`;
+  }
+
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  if (minutes === 0) {
+    return `${hours} 小时`;
+  }
+
+  return `${hours} 小时 ${minutes} 分钟`;
+}
+
 export function formatStatusCode(value: number | null | undefined) {
   if (value === null || value === undefined) {
     return "未探测";

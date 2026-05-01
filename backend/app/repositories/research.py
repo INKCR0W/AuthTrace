@@ -56,6 +56,7 @@ class ResearchBucketCount:
 class ResearchPre401Insights:
     sampled_events: int
     events_with_previous_snapshot: int
+    previous_to_event_gap_bands: list[ResearchBucketCount]
     weekly_used_percent_bands: list[ResearchBucketCount]
     short_used_percent_bands: list[ResearchBucketCount]
     signal_breakdown: list[ResearchBucketCount]
@@ -73,6 +74,7 @@ class ResearchEventSample:
     current_is_401: bool
     previous_snapshot_id: int | None
     previous_checked_at: datetime | None
+    previous_to_event_gap_minutes: int | None
     previous_weekly_used_percent: Decimal | None
     previous_short_used_percent: Decimal | None
     previous_remaining: Decimal | None
@@ -339,12 +341,16 @@ def _build_pre_401_insights(
     event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
 ) -> ResearchPre401Insights:
     previous_snapshots = [snapshot for _, _, snapshot in event_rows if snapshot is not None]
+    previous_gap_counter = Counter[str]()
     weekly_counter = Counter(_bucket_percent(snapshot.weekly_used_percent) for snapshot in previous_snapshots)
     short_counter = Counter(_bucket_percent(snapshot.short_used_percent) for snapshot in previous_snapshots)
     signal_counter = Counter[str]()
     status_counter = Counter[str]()
 
-    for snapshot in previous_snapshots:
+    for event, _, snapshot in event_rows:
+        if snapshot is None:
+            continue
+        previous_gap_counter[_bucket_previous_gap(event_time=event.event_time, previous_checked_at=snapshot.checked_at)] += 1
         if _decimal_gte(snapshot.weekly_used_percent, Decimal("90")):
             signal_counter["weekly_ge_90"] += 1
         if _decimal_gte(snapshot.short_used_percent, Decimal("90")):
@@ -362,6 +368,7 @@ def _build_pre_401_insights(
     return ResearchPre401Insights(
         sampled_events=len(event_rows),
         events_with_previous_snapshot=len(previous_snapshots),
+        previous_to_event_gap_bands=_build_previous_gap_band_counts(previous_gap_counter),
         weekly_used_percent_bands=_build_percent_band_counts(weekly_counter),
         short_used_percent_bands=_build_percent_band_counts(short_counter),
         signal_breakdown=_build_signal_breakdown(signal_counter),
@@ -384,6 +391,11 @@ def _build_recent_event_samples(
             previous_snapshot_id=previous_snapshot.id if previous_snapshot is not None else None,
             previous_checked_at=(
                 _ensure_utc(previous_snapshot.checked_at)
+                if previous_snapshot is not None
+                else None
+            ),
+            previous_to_event_gap_minutes=(
+                _build_gap_minutes(event_time=event.event_time, previous_checked_at=previous_snapshot.checked_at)
                 if previous_snapshot is not None
                 else None
             ),
@@ -595,6 +607,17 @@ def _build_percent_band_counts(counter: Counter[str]) -> list[ResearchBucketCoun
         ("75_89", "75-89%", counter.get("75_89", 0)),
         ("90_100", "90-100%", counter.get("90_100", 0)),
         ("missing", "未记录", counter.get("missing", 0)),
+    ]
+    return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in bands]
+
+
+def _build_previous_gap_band_counts(counter: Counter[str]) -> list[ResearchBucketCount]:
+    bands = [
+        ("lt_15m", "15 分钟内", counter.get("lt_15m", 0)),
+        ("15m_1h", "15-60 分钟", counter.get("15m_1h", 0)),
+        ("1h_6h", "1-6 小时", counter.get("1h_6h", 0)),
+        ("6h_24h", "6-24 小时", counter.get("6h_24h", 0)),
+        ("24h_plus", "24 小时以上", counter.get("24h_plus", 0)),
     ]
     return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in bands]
 
@@ -870,3 +893,24 @@ def _datetime_to_timestamp(value: datetime | None) -> float:
     if value is None:
         return float("-inf")
     return value.timestamp()
+
+
+def _build_gap_minutes(*, event_time: datetime, previous_checked_at: datetime) -> int:
+    gap_seconds = (_ensure_utc(event_time) - _ensure_utc(previous_checked_at)).total_seconds()
+    if gap_seconds <= 0:
+        return 0
+    return int(gap_seconds // 60)
+
+
+def _bucket_previous_gap(*, event_time: datetime, previous_checked_at: datetime) -> str:
+    gap = _ensure_utc(event_time) - _ensure_utc(previous_checked_at)
+
+    if gap < timedelta(minutes=15):
+        return "lt_15m"
+    if gap < timedelta(hours=1):
+        return "15m_1h"
+    if gap < timedelta(hours=6):
+        return "1h_6h"
+    if gap < timedelta(hours=24):
+        return "6h_24h"
+    return "24h_plus"

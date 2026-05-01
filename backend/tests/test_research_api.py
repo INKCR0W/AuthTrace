@@ -159,8 +159,8 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         prev_azure_hot = AccountSnapshot(
             account_id=azure_hot.id,
             scan_job_id=scan_job.id,
-            checked_at=base_time - timedelta(hours=2, minutes=5),
-            created_at=base_time - timedelta(hours=2, minutes=5),
+            checked_at=base_time - timedelta(hours=4, minutes=30),
+            created_at=base_time - timedelta(hours=4, minutes=30),
             snapshot_status="success",
             probe_status_code=200,
             is_401=False,
@@ -174,8 +174,8 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         prev_openai_old = AccountSnapshot(
             account_id=openai_hot.id,
             scan_job_id=scan_job.id,
-            checked_at=base_time - timedelta(days=3, minutes=10),
-            created_at=base_time - timedelta(days=3, minutes=10),
+            checked_at=base_time - timedelta(days=4, hours=6),
+            created_at=base_time - timedelta(days=4, hours=6),
             snapshot_status="success",
             probe_status_code=200,
             is_401=False,
@@ -291,6 +291,13 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
     insights = payload["pre_401_insights"]
     assert insights["sampled_events"] == 3
     assert insights["events_with_previous_snapshot"] == 3
+    assert insights["previous_to_event_gap_bands"] == [
+        {"key": "lt_15m", "label": "15 分钟内", "count": 1},
+        {"key": "15m_1h", "label": "15-60 分钟", "count": 0},
+        {"key": "1h_6h", "label": "1-6 小时", "count": 1},
+        {"key": "6h_24h", "label": "6-24 小时", "count": 0},
+        {"key": "24h_plus", "label": "24 小时以上", "count": 1},
+    ]
     assert insights["weekly_used_percent_bands"] == [
         {"key": "0_24", "label": "0-24%", "count": 0},
         {"key": "25_49", "label": "25-49%", "count": 0},
@@ -333,6 +340,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "current_is_401": True,
         "previous_snapshot_id": 1,
         "previous_checked_at": "2026-05-02T10:55:00Z",
+        "previous_to_event_gap_minutes": 5,
         "previous_weekly_used_percent": "95.00",
         "previous_short_used_percent": "88.00",
         "previous_remaining": "4.00",
@@ -593,6 +601,13 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
     insights = payload["pre_401_insights"]
     assert insights["sampled_events"] == 2
     assert insights["events_with_previous_snapshot"] == 2
+    assert insights["previous_to_event_gap_bands"] == [
+        {"key": "lt_15m", "label": "15 分钟内", "count": 2},
+        {"key": "15m_1h", "label": "15-60 分钟", "count": 0},
+        {"key": "1h_6h", "label": "1-6 小时", "count": 0},
+        {"key": "6h_24h", "label": "6-24 小时", "count": 0},
+        {"key": "24h_plus", "label": "24 小时以上", "count": 0},
+    ]
     assert insights["weekly_used_percent_bands"] == [
         {"key": "0_24", "label": "0-24%", "count": 0},
         {"key": "25_49", "label": "25-49%", "count": 0},
@@ -1443,6 +1458,7 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
             "current_is_401": True,
             "previous_snapshot_id": 1,
             "previous_checked_at": "2026-05-02T10:55:00Z",
+            "previous_to_event_gap_minutes": 5,
             "previous_weekly_used_percent": "95.00",
             "previous_short_used_percent": "88.00",
             "previous_remaining": "2.00",

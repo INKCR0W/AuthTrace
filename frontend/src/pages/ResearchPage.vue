@@ -6,7 +6,7 @@ import { getResearchOverview } from "@/api/client";
 import DistributionBarChart from "@/components/DistributionBarChart.vue";
 import MetricCard from "@/components/MetricCard.vue";
 import StatusPill from "@/components/StatusPill.vue";
-import { formatCount, formatDateTime, formatPercent, formatRemaining } from "@/lib/format";
+import { formatCount, formatDateTime, formatMinutesSpan, formatPercent, formatRemaining } from "@/lib/format";
 import type {
   ResearchBucketCount,
   ResearchCurrentSignalSample,
@@ -50,6 +50,12 @@ const shortBandLabels = computed(
 );
 const shortBandValues = computed(
   () => overview.value?.pre_401_insights.short_used_percent_bands.map((item) => item.count) ?? [],
+);
+const gapBandLabels = computed(
+  () => overview.value?.pre_401_insights.previous_to_event_gap_bands.map((item) => item.label) ?? [],
+);
+const gapBandValues = computed(
+  () => overview.value?.pre_401_insights.previous_to_event_gap_bands.map((item) => item.count) ?? [],
 );
 const normalizedProvider = computed(() => filters.provider.trim());
 const normalizedAccountType = computed(() => filters.accountType.trim());
@@ -151,6 +157,10 @@ function sampleUsageSummary(item: ResearchEventSample) {
     `短周期 ${formatPercent(item.previous_short_used_percent)}`,
     `remaining ${formatRemaining(item.previous_remaining)}`,
   ].join(" / ");
+}
+
+function sampleGapSummary(item: ResearchEventSample) {
+  return `距 401 事件 ${formatMinutesSpan(item.previous_to_event_gap_minutes)}`;
 }
 
 function sampleSignalSummary(item: ResearchEventSample) {
@@ -435,6 +445,16 @@ onMounted(() => {
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div>
+              <p class="section-kicker">证据新鲜度</p>
+              <h3>前序正常快照距离 401 有多近</h3>
+            </div>
+          </div>
+          <DistributionBarChart :labels="gapBandLabels" :values="gapBandValues" series-name="前序样本数" />
+        </article>
+
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div>
               <p class="section-kicker">周额度样本</p>
               <h3>401 前最后一次周额度分桶</h3>
             </div>
@@ -581,6 +601,7 @@ onMounted(() => {
               <div>
                 <p class="subtle-label">前序正常快照</p>
                 <p>{{ formatDateTime(sample.previous_checked_at) }}</p>
+                <p class="subtle-line">{{ sampleGapSummary(sample) }}</p>
                 <p class="subtle-line">{{ sampleUsageSummary(sample) }}</p>
               </div>
               <div>

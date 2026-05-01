@@ -64,6 +64,10 @@ def get_research_overview_api(
         pre_401_insights=ResearchPre401Insights(
             sampled_events=overview.pre_401_insights.sampled_events,
             events_with_previous_snapshot=overview.pre_401_insights.events_with_previous_snapshot,
+            previous_to_event_gap_bands=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.pre_401_insights.previous_to_event_gap_bands
+            ],
             weekly_used_percent_bands=[
                 ResearchBucketCount.model_validate(item)
                 for item in overview.pre_401_insights.weekly_used_percent_bands

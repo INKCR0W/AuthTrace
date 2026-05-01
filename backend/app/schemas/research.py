@@ -51,6 +51,7 @@ class ResearchBucketCount(BaseModel):
 class ResearchPre401Insights(BaseModel):
     sampled_events: int
     events_with_previous_snapshot: int
+    previous_to_event_gap_bands: list[ResearchBucketCount] = Field(default_factory=list)
     weekly_used_percent_bands: list[ResearchBucketCount] = Field(default_factory=list)
     short_used_percent_bands: list[ResearchBucketCount] = Field(default_factory=list)
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
@@ -69,6 +70,7 @@ class ResearchEventSample(BaseModel):
     current_is_401: bool
     previous_snapshot_id: int | None = None
     previous_checked_at: datetime | None = None
+    previous_to_event_gap_minutes: int | None = None
     previous_weekly_used_percent: Decimal | None = None
     previous_short_used_percent: Decimal | None = None
     previous_remaining: Decimal | None = None

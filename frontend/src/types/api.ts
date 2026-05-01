@@ -87,6 +87,7 @@ export interface ResearchBucketCount {
 export interface ResearchPre401Insights {
   sampled_events: number;
   events_with_previous_snapshot: number;
+  previous_to_event_gap_bands: ResearchBucketCount[];
   weekly_used_percent_bands: ResearchBucketCount[];
   short_used_percent_bands: ResearchBucketCount[];
   signal_breakdown: ResearchBucketCount[];
@@ -152,6 +153,7 @@ export interface ResearchEventSample {
   current_is_401: boolean;
   previous_snapshot_id: number | null;
   previous_checked_at: string | null;
+  previous_to_event_gap_minutes: number | null;
   previous_weekly_used_percent: string | null;
   previous_short_used_percent: string | null;
   previous_remaining: string | null;
