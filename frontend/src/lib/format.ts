@@ -24,6 +24,14 @@ export function formatPercent(value: string | number | null | undefined) {
   return `${value}%`;
 }
 
+export function formatRemaining(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "未记录";
+  }
+
+  return String(value);
+}
+
 export function formatCount(value: number) {
   return new Intl.NumberFormat("zh-CN").format(value);
 }

@@ -209,15 +209,110 @@ select {
   height: 320px;
 }
 
+.chart-root-tall {
+  height: 360px;
+}
+
 .detail-list,
 .detail-grid,
-.event-grid {
+.event-grid,
+.mini-grid,
+.insight-grid,
+.transition-columns {
   display: grid;
   gap: 12px;
 }
 
 .detail-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.insight-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.insight-card {
+  padding: 18px;
+  border-radius: 22px;
+}
+
+.insight-card[data-tone="success"] {
+  background: linear-gradient(180deg, rgba(15, 139, 141, 0.12), rgba(255, 251, 245, 0.92));
+}
+
+.insight-card[data-tone="warning"] {
+  background: linear-gradient(180deg, rgba(212, 107, 45, 0.14), rgba(255, 251, 245, 0.92));
+}
+
+.insight-card[data-tone="danger"] {
+  background: linear-gradient(180deg, rgba(163, 61, 77, 0.12), rgba(255, 251, 245, 0.92));
+}
+
+.insight-value {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.chart-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.observation-list,
+.transition-list {
+  display: grid;
+  gap: 12px;
+}
+
+.observation-item {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 250, 241, 0.82);
+  border: 1px solid var(--line);
+}
+
+.account-detail-grid {
+  grid-template-columns: 1.15fr 1fr;
+}
+
+.transition-card {
+  padding: 18px;
+  border-radius: 22px;
+}
+
+.transition-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.snapshot-brief {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 250, 241, 0.74);
+  border: 1px solid var(--line);
+}
+
+.snapshot-brief h4 {
+  margin: 0 0 12px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1rem;
+}
+
+.mini-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mini-value {
+  margin: 0;
+  font-weight: 700;
+}
+
+.snapshot-empty {
+  margin: 0;
+  color: var(--muted);
 }
 
 .filter-bar {
@@ -379,7 +474,10 @@ select {
   .metric-grid,
   .filter-bar,
   .panel-grid,
-  .detail-grid {
+  .detail-grid,
+  .insight-grid,
+  .transition-columns,
+  .account-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -400,7 +498,11 @@ select {
   .metric-grid,
   .filter-bar,
   .panel-grid,
-  .detail-grid {
+  .detail-grid,
+  .insight-grid,
+  .transition-columns,
+  .mini-grid,
+  .account-detail-grid {
     grid-template-columns: 1fr;
   }
 
@@ -418,5 +520,9 @@ select {
 
   .chart-root {
     height: 260px;
+  }
+
+  .chart-root-tall {
+    height: 300px;
   }
 }
