@@ -391,8 +391,6 @@ def _create_events_for_snapshot(
         db.add(event)
         if event.event_type == "became_401":
             stats.new_401_events += 1
-        if event.event_type == "quota_exhausted":
-            stats.new_quota_events += 1
     return stats
 
 
@@ -418,16 +416,6 @@ def _build_transition_events(
             _new_event(
                 account=account,
                 event_type="recovered_from_401",
-                previous_snapshot=previous_snapshot,
-                current_snapshot=current_snapshot,
-            )
-        )
-
-    if not previous_snapshot.invalid_quota and current_snapshot.invalid_quota:
-        events.append(
-            _new_event(
-                account=account,
-                event_type="quota_exhausted",
                 previous_snapshot=previous_snapshot,
                 current_snapshot=current_snapshot,
             )

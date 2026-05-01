@@ -198,9 +198,7 @@ onMounted(() => {
             <div>
               <p class="subtle-label">结果产出</p>
               <p>成功 {{ formatCount(item.success_accounts) }} / 失败 {{ formatCount(item.failed_accounts) }}</p>
-              <p class="subtle-line">
-                新增 401 {{ formatCount(item.new_401_events) }}，新增额度异常 {{ formatCount(item.new_quota_events) }}
-              </p>
+              <p class="subtle-line">新增 401 {{ formatCount(item.new_401_events) }}</p>
             </div>
             <div>
               <p class="subtle-label">时间信息</p>
@@ -231,9 +229,7 @@ onMounted(() => {
                 <div>
                   <p class="subtle-label">风险覆盖</p>
                   <p>401 样本 {{ formatCount(detailResult.snapshot_stats.is_401_snapshots) }}</p>
-                  <p class="subtle-line">
-                    额度异常 {{ formatCount(detailResult.snapshot_stats.invalid_quota_snapshots) }}
-                  </p>
+                  <p class="subtle-line">失败快照 {{ formatCount(detailResult.snapshot_stats.failed_snapshots) }}</p>
                 </div>
               </div>
 
@@ -274,7 +270,7 @@ onMounted(() => {
                   <div class="panel-heading">
                     <div>
                       <p class="section-kicker">风险样本</p>
-                      <h3>401 与额度异常</h3>
+                      <h3>401 与失败观察</h3>
                     </div>
                   </div>
 
@@ -301,7 +297,7 @@ onMounted(() => {
                     </div>
 
                     <div>
-                      <p class="subtle-label">最近额度异常样本</p>
+                      <p class="subtle-label">额度观察样本</p>
                       <div v-if="detailResult.recent_quota_samples.length" class="event-stack">
                         <article
                           v-for="sample in detailResult.recent_quota_samples"
@@ -319,7 +315,7 @@ onMounted(() => {
                           <p>{{ sample.status_message || sample.error_message || "无额外提示" }}</p>
                         </article>
                       </div>
-                      <p v-else class="feedback">这一轮没有额度异常样本。</p>
+                      <p v-else class="feedback">当前口径下不会再把非 401 样本标记为异常。</p>
                     </div>
                   </div>
                 </article>

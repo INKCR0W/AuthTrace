@@ -3,7 +3,7 @@ import { LineChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { init, use, type ECharts } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { formatDateTime } from "@/lib/format";
 import type { AccountCohortTrendPoint } from "@/types/api";
@@ -16,8 +16,6 @@ const props = defineProps<{
 }>();
 
 const chartRoot = ref<HTMLElement | null>(null);
-
-const pressureSeries = computed(() => props.points.map((point) => point.high_weekly_count + point.high_short_count));
 
 let chart: ECharts | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -77,8 +75,6 @@ function renderChart() {
           `<strong>${formatDateTime(point.bucket_start)}</strong>`,
           `同组快照：${point.snapshot_count}`,
           `401 快照：${point.is_401_count}`,
-          `额度异常：${point.invalid_quota_count}`,
-          `高压信号：${point.high_weekly_count + point.high_short_count}`,
           `失败快照：${point.failed_count}`,
         ].join("<br/>");
       },
@@ -129,35 +125,18 @@ function renderChart() {
         },
       },
       {
-        name: "额度异常",
+        name: "失败快照",
         type: "line",
         smooth: true,
         symbol: "diamond",
         symbolSize: 7,
-        data: props.points.map((point) => point.invalid_quota_count),
+        data: props.points.map((point) => point.failed_count),
         lineStyle: {
           width: 3,
           color: "#d46b2d",
         },
         itemStyle: {
           color: "#d46b2d",
-          borderColor: "#fffaf1",
-          borderWidth: 2,
-        },
-      },
-      {
-        name: "高压信号",
-        type: "line",
-        smooth: true,
-        symbol: "triangle",
-        symbolSize: 8,
-        data: pressureSeries.value,
-        lineStyle: {
-          width: 3,
-          color: "#0f8b8d",
-        },
-        itemStyle: {
-          color: "#0f8b8d",
           borderColor: "#fffaf1",
           borderWidth: 2,
         },

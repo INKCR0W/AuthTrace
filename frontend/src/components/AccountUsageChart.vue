@@ -16,7 +16,6 @@ type ChartPoint = {
   weekly: number | null;
   short: number | null;
   is401: boolean;
-  invalidQuota: boolean;
   statusCode: number | null;
   snapshotStatus: string;
 };
@@ -32,7 +31,6 @@ const points = computed<ChartPoint[]>(() => props.snapshots.map((snapshot) => ({
   weekly: toNumber(snapshot.weekly_used_percent),
   short: toNumber(snapshot.short_used_percent),
   is401: snapshot.is_401,
-  invalidQuota: snapshot.invalid_quota,
   statusCode: snapshot.probe_status_code,
   snapshotStatus: snapshot.snapshot_status,
 })));
@@ -64,7 +62,7 @@ function formatAxisTime(value: string) {
 }
 
 function markerValue(point: ChartPoint) {
-  return point.weekly ?? point.short ?? (point.invalidQuota || point.is401 ? 100 : null);
+  return point.weekly ?? point.short ?? (point.is401 ? 100 : null);
 }
 
 function renderChart() {
@@ -112,7 +110,6 @@ function renderChart() {
           `周额度：${formatPercent(point.weekly)}`,
           `短周期：${formatPercent(point.short)}`,
           `401：${point.is401 ? "是" : "否"}`,
-          `额度异常：${point.invalidQuota ? "是" : "否"}`,
           `快照状态：${point.snapshotStatus}`,
         ];
 
@@ -192,18 +189,6 @@ function renderChart() {
         data: points.value.map((point) => point.is401 ? markerValue(point) : null),
         itemStyle: {
           color: "#a33d4d",
-          borderColor: "#fffaf1",
-          borderWidth: 2,
-        },
-      },
-      {
-        name: "额度异常",
-        type: "scatter",
-        symbol: "triangle",
-        symbolSize: 12,
-        data: points.value.map((point) => point.invalidQuota && !point.is401 ? markerValue(point) : null),
-        itemStyle: {
-          color: "#6b645f",
           borderColor: "#fffaf1",
           borderWidth: 2,
         },

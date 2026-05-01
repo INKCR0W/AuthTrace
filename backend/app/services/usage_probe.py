@@ -43,20 +43,18 @@ def parse_usage_probe_response(
     weekly_quota_threshold: Decimal,
     short_quota_threshold: Decimal,
 ) -> UsageProbeParseResult:
-    quota_marked_by_status = _status_message_marks_quota(status_message)
     status_code = _coerce_int(response.get("status_code"))
     body = response.get("body")
     body_data = _as_json_obj(body)
 
     if status_code is None:
-        invalid_quota = quota_marked_by_status or _contains_limit_error(response) or _contains_limit_error(body)
         return UsageProbeParseResult(
             snapshot_status="failed",
             probe_status_code=None,
             is_401=False,
             quota_status_code=None,
-            invalid_quota=invalid_quota,
-            quota_source="status_message" if invalid_quota else None,
+            invalid_quota=False,
+            quota_source=None,
             weekly_used_percent=None,
             weekly_reset_at=None,
             short_used_percent=None,
@@ -66,7 +64,7 @@ def parse_usage_probe_response(
             allowed=None,
             raw_usage_json=body_data,
             error_message="api-call 响应缺少 status_code",
-            has_quota_observation=invalid_quota,
+            has_quota_observation=False,
         )
 
     if status_code == 401:
@@ -90,14 +88,13 @@ def parse_usage_probe_response(
         )
 
     if status_code != 200:
-        invalid_quota = quota_marked_by_status or _contains_limit_error(response) or _contains_limit_error(body)
         return UsageProbeParseResult(
             snapshot_status="partial_failed",
             probe_status_code=status_code,
             is_401=False,
             quota_status_code=status_code,
-            invalid_quota=invalid_quota,
-            quota_source="status_message" if invalid_quota else None,
+            invalid_quota=False,
+            quota_source=None,
             weekly_used_percent=None,
             weekly_reset_at=None,
             short_used_percent=None,
@@ -107,7 +104,7 @@ def parse_usage_probe_response(
             allowed=None,
             raw_usage_json=body_data,
             error_message=None,
-            has_quota_observation=invalid_quota,
+            has_quota_observation=False,
         )
 
     if body_data is None:
@@ -116,8 +113,8 @@ def parse_usage_probe_response(
             probe_status_code=200,
             is_401=False,
             quota_status_code=200,
-            invalid_quota=quota_marked_by_status,
-            quota_source="status_message" if quota_marked_by_status else None,
+            invalid_quota=False,
+            quota_source=None,
             weekly_used_percent=None,
             weekly_reset_at=None,
             short_used_percent=None,
@@ -127,7 +124,7 @@ def parse_usage_probe_response(
             allowed=None,
             raw_usage_json=None,
             error_message="usage body 不是有效 JSON 对象",
-            has_quota_observation=quota_marked_by_status,
+            has_quota_observation=False,
         )
 
     rate_limit = body_data.get("rate_limit") or body_data.get("rateLimit") or {}
@@ -159,35 +156,6 @@ def parse_usage_probe_response(
     if allowed is None:
         allowed = _coerce_bool(_pick_first(body_data, "allowed"))
 
-    invalid_quota = False
-    quota_source: str | None = None
-
-    if weekly_used_percent is not None:
-        quota_source = "weekly"
-        invalid_quota = weekly_used_percent >= weekly_quota_threshold
-    elif short_used_percent is not None:
-        quota_source = "5hour"
-        invalid_quota = short_used_percent >= short_quota_threshold
-    else:
-        remaining_zero = any(window.remaining == Decimal("0") for window in windows if window.remaining is not None)
-        weekly_limit_reached = bool(weekly_window and weekly_window.limit_reached is True)
-        short_limit_reached = bool(short_window and short_window.limit_reached is True)
-        if weekly_limit_reached:
-            invalid_quota = True
-            quota_source = "weekly_limit"
-        elif short_limit_reached:
-            invalid_quota = True
-            quota_source = "5hour_limit"
-        elif remaining_zero:
-            invalid_quota = True
-            quota_source = "remaining"
-        elif top_limit_reached is True or allowed is False:
-            invalid_quota = True
-            quota_source = "rate_limit_flag"
-        elif quota_marked_by_status:
-            invalid_quota = True
-            quota_source = "status_message"
-
     has_quota_observation = any(
         value is not None
         for value in (
@@ -199,15 +167,15 @@ def parse_usage_probe_response(
             limit_reached,
             allowed,
         )
-    ) or invalid_quota
+    )
 
     return UsageProbeParseResult(
         snapshot_status="success",
         probe_status_code=200,
         is_401=False,
         quota_status_code=200,
-        invalid_quota=invalid_quota,
-        quota_source=quota_source,
+        invalid_quota=False,
+        quota_source=None,
         weekly_used_percent=weekly_used_percent,
         weekly_reset_at=weekly_reset_at,
         short_used_percent=short_used_percent,

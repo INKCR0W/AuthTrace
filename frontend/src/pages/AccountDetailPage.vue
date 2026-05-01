@@ -30,14 +30,8 @@ const providerTrendPoints = computed(() => detail.value?.provider_account_type_t
 
 const summaryCards = computed(() => {
   const snapshots = recentSnapshots.value;
-  const weeklyHot = snapshots.filter((snapshot) => toNumber(snapshot.weekly_used_percent) >= 80);
-  const shortHot = snapshots.filter((snapshot) => toNumber(snapshot.short_used_percent) >= 80);
-  const stressed = snapshots.filter((snapshot) => snapshot.invalid_quota || snapshot.limit_reached || snapshot.allowed === false);
   const failed = snapshots.filter((snapshot) => snapshot.snapshot_status !== "success");
-  const exceptionCount = new Set([
-    ...stressed.map((snapshot) => snapshot.id),
-    ...failed.map((snapshot) => snapshot.id),
-  ]).size;
+  const current401 = snapshots.filter((snapshot) => snapshot.is_401);
 
   return [
     {
@@ -47,26 +41,16 @@ const summaryCards = computed(() => {
       tone: "muted" as const,
     },
     {
-      label: "周额度高压",
-      value: `${weeklyHot.length} 次`,
-      hint: weeklyHot[0] ? `最近一次 ${formatDateTime(weeklyHot[0].checked_at)}` : "窗口内未出现周额度 >= 80%",
-      tone: weeklyHot.length > 0 ? "warning" as const : "success" as const,
+      label: "当前 401 样本",
+      value: `${current401.length} 次`,
+      hint: current401[0] ? `最近一次 ${formatDateTime(current401[0].checked_at)}` : "窗口内没有 401 快照",
+      tone: current401.length > 0 ? "danger" as const : "success" as const,
     },
     {
-      label: "短周期高压",
-      value: `${shortHot.length} 次`,
-      hint: shortHot[0] ? `最近一次 ${formatDateTime(shortHot[0].checked_at)}` : "窗口内未出现短周期 >= 80%",
-      tone: shortHot.length > 0 ? "warning" as const : "success" as const,
-    },
-    {
-      label: "异常或失败",
-      value: `${exceptionCount} 次`,
-      hint: stressed[0]
-        ? `最近一次异常 ${formatDateTime(stressed[0].checked_at)}`
-        : failed[0]
-          ? `最近一次失败 ${formatDateTime(failed[0].checked_at)}`
-          : "窗口内未发现异常或失败快照",
-      tone: exceptionCount > 0 ? "danger" as const : "success" as const,
+      label: "失败快照",
+      value: `${failed.length} 次`,
+      hint: failed[0] ? `最近一次失败 ${formatDateTime(failed[0].checked_at)}` : "窗口内没有失败快照",
+      tone: failed.length > 0 ? "warning" as const : "success" as const,
     },
   ];
 });
@@ -112,15 +96,15 @@ const observationNotes = computed(() => {
   ];
 
   const hottestPoint = providerTrendPoints.value.reduce((current, point) => {
-    const currentScore = current ? current.is_401_count + current.invalid_quota_count + current.failed_count : -1;
-    const nextScore = point.is_401_count + point.invalid_quota_count + point.failed_count;
+    const currentScore = current ? current.is_401_count + current.failed_count : -1;
+    const nextScore = point.is_401_count + point.failed_count;
     return nextScore > currentScore ? point : current;
   }, providerTrendPoints.value[0]);
 
   const totalSnapshots = providerTrendPoints.value.reduce((sum, point) => sum + point.snapshot_count, 0);
   if (hottestPoint && totalSnapshots > 0) {
     notes.push(
-      `同组合近 24 小时最热时段出现在 ${formatDateTime(hottestPoint.bucket_start)}，当时 401 ${hottestPoint.is_401_count} 条、额度异常 ${hottestPoint.invalid_quota_count} 条、失败 ${hottestPoint.failed_count} 条。`,
+      `同组合近 24 小时最热时段出现在 ${formatDateTime(hottestPoint.bucket_start)}，当时 401 ${hottestPoint.is_401_count} 条、失败 ${hottestPoint.failed_count} 条。`,
     );
   }
 
@@ -153,15 +137,6 @@ async function loadDetail() {
 watch(accountId, () => {
   void loadDetail();
 }, { immediate: true });
-
-function toNumber(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === "") {
-    return -1;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : -1;
-}
 
 function formatEventType(eventType: string) {
   const labels: Record<string, string> = {
@@ -205,14 +180,6 @@ function transitionSummary(event: AccountEventSummary) {
 function cohortTone(cohort: AccountCohortBreakdown) {
   if (cohort.current_401_accounts > 0 || cohort.became_401_events_last_24h > 0) {
     return "danger" as const;
-  }
-  if (
-    cohort.current_invalid_quota_accounts > 0
-    || cohort.quota_exhausted_events_last_24h > 0
-    || cohort.high_weekly_accounts > 0
-    || cohort.high_short_accounts > 0
-  ) {
-    return "warning" as const;
   }
   return "success" as const;
 }
@@ -273,7 +240,6 @@ function signalTone(signal: AccountRiskSignal) {
           </div>
           <div class="status-stack">
             <StatusPill :tone="detail.account.current_is_401 ? 'danger' : 'success'" :text="formatStatusCode(detail.account.current_status_code)" />
-            <StatusPill :tone="detail.account.current_invalid_quota ? 'warning' : 'muted'" :text="detail.account.current_invalid_quota ? '额度异常' : '额度正常'" />
             <StatusPill :tone="detail.account.disabled ? 'muted' : 'success'" :text="detail.account.disabled ? '已禁用' : '活跃'" />
           </div>
         </div>
@@ -364,22 +330,10 @@ function signalTone(signal: AccountRiskSignal) {
                 <p class="mini-value">{{ formatCount(item.cohort.current_401_accounts) }}</p>
               </div>
               <div>
-                <p class="subtle-label">当前额度异常</p>
-                <p class="mini-value">{{ formatCount(item.cohort.current_invalid_quota_accounts) }}</p>
-              </div>
-              <div>
                 <p class="subtle-label">24h 新增 401</p>
                 <p class="mini-value">{{ formatCount(item.cohort.became_401_events_last_24h) }}</p>
               </div>
-              <div>
-                <p class="subtle-label">24h 新增额度异常</p>
-                <p class="mini-value">{{ formatCount(item.cohort.quota_exhausted_events_last_24h) }}</p>
-              </div>
             </div>
-
-            <p class="subtle-line">
-              高压信号：周额度高压 {{ formatCount(item.cohort.high_weekly_accounts) }} 个，短周期高压 {{ formatCount(item.cohort.high_short_accounts) }} 个，受限 {{ formatCount(item.cohort.current_blocked_accounts) }} 个。
-            </p>
           </article>
         </div>
 
@@ -440,7 +394,7 @@ function signalTone(signal: AccountRiskSignal) {
           </div>
 
           <p class="chart-note">
-            口径为同 provider + 类型组合的小时级快照计数，观察 401、额度异常与高压信号是否同步抬头。
+            口径为同 provider + 类型组合的小时级快照计数，观察 401 与失败快照是否同步抬头。
           </p>
           <CohortRiskTrendChart v-if="providerTrendPoints.length" :points="providerTrendPoints" />
           <p v-else class="feedback">当前组合近 24 小时还没有可用于展示的快照。</p>
@@ -457,7 +411,7 @@ function signalTone(signal: AccountRiskSignal) {
           </div>
 
           <p class="chart-note">
-            周额度与短周期共用 0 到 100% 纵轴，红点标记 401，灰色三角标记额度异常。
+            周额度与短周期共用 0 到 100% 纵轴，红点标记 401。
           </p>
           <AccountUsageChart v-if="chartSnapshots.length" :snapshots="chartSnapshots" />
           <p v-else class="feedback">还没有可用于绘图的快照数据。</p>

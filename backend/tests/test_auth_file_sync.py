@@ -743,19 +743,18 @@ def test_sync_auth_files_generates_transition_events_and_scan_stats() -> None:
         assert scan_jobs[1].new_401_events == 1
         assert scan_jobs[1].new_quota_events == 0
         assert scan_jobs[2].new_401_events == 0
-        assert scan_jobs[2].new_quota_events == 1
+        assert scan_jobs[2].new_quota_events == 0
         assert len(snapshots) == 3
-        assert len(events) == 3
+        assert len(events) == 2
         assert events[0].event_type == "became_401"
         assert events[0].previous_snapshot_id == snapshots[0].id
         assert events[0].related_snapshot_id == snapshots[1].id
         assert events[1].event_type == "recovered_from_401"
         assert events[1].previous_snapshot_id == snapshots[1].id
         assert events[1].related_snapshot_id == snapshots[2].id
-        assert events[2].event_type == "quota_exhausted"
         assert account.current_status_code == 200
         assert account.current_is_401 is False
-        assert account.current_invalid_quota is True
+        assert account.current_invalid_quota is False
 
     app.dependency_overrides.clear()
 
@@ -1219,16 +1218,16 @@ def test_account_detail_returns_cohort_research_summary() -> None:
         "active_accounts": 3,
         "disabled_accounts": 1,
         "current_401_accounts": 1,
-        "current_invalid_quota_accounts": 1,
+        "current_invalid_quota_accounts": 0,
         "became_401_events_last_24h": 1,
-        "quota_exhausted_events_last_24h": 1,
+        "quota_exhausted_events_last_24h": 0,
         "checked_accounts_last_24h": 4,
-        "high_weekly_accounts": 3,
-        "high_short_accounts": 1,
-        "current_limit_reached_accounts": 1,
-        "current_blocked_accounts": 1,
+        "high_weekly_accounts": 0,
+        "high_short_accounts": 0,
+        "current_limit_reached_accounts": 0,
+        "current_blocked_accounts": 0,
         "current_401_rate": 25.0,
-        "current_invalid_quota_rate": 25.0,
+        "current_invalid_quota_rate": 0.0,
     }
     assert payload["account_type_cohort"] == {
         "label": "chatgpt",
@@ -1238,16 +1237,16 @@ def test_account_detail_returns_cohort_research_summary() -> None:
         "active_accounts": 3,
         "disabled_accounts": 1,
         "current_401_accounts": 1,
-        "current_invalid_quota_accounts": 2,
+        "current_invalid_quota_accounts": 0,
         "became_401_events_last_24h": 1,
-        "quota_exhausted_events_last_24h": 1,
+        "quota_exhausted_events_last_24h": 0,
         "checked_accounts_last_24h": 4,
-        "high_weekly_accounts": 2,
+        "high_weekly_accounts": 0,
         "high_short_accounts": 0,
-        "current_limit_reached_accounts": 1,
-        "current_blocked_accounts": 1,
+        "current_limit_reached_accounts": 0,
+        "current_blocked_accounts": 0,
         "current_401_rate": 25.0,
-        "current_invalid_quota_rate": 50.0,
+        "current_invalid_quota_rate": 0.0,
     }
     assert payload["provider_account_type_cohort"] == {
         "label": "openai / chatgpt",
@@ -1257,16 +1256,16 @@ def test_account_detail_returns_cohort_research_summary() -> None:
         "active_accounts": 2,
         "disabled_accounts": 1,
         "current_401_accounts": 1,
-        "current_invalid_quota_accounts": 1,
+        "current_invalid_quota_accounts": 0,
         "became_401_events_last_24h": 1,
-        "quota_exhausted_events_last_24h": 1,
+        "quota_exhausted_events_last_24h": 0,
         "checked_accounts_last_24h": 3,
-        "high_weekly_accounts": 2,
+        "high_weekly_accounts": 0,
         "high_short_accounts": 0,
-        "current_limit_reached_accounts": 1,
-        "current_blocked_accounts": 1,
+        "current_limit_reached_accounts": 0,
+        "current_blocked_accounts": 0,
         "current_401_rate": 33.33,
-        "current_invalid_quota_rate": 33.33,
+        "current_invalid_quota_rate": 0.0,
     }
     assert payload["cohort_usage_position"] == {
         "weekly_compared_accounts": 2,
@@ -1279,8 +1278,8 @@ def test_account_detail_returns_cohort_research_summary() -> None:
     assert payload["risk_overview"] == {
         "level": "medium",
         "headline": "中风险提示：当前账号存在前置信号，建议继续观察同组变化。",
-        "summary": "最近窗口包含 0 条快照，高压 0 次，失败 0 次；同组合近 24 小时新增 401 1 次。",
-        "signal_count": 2,
+        "summary": "最近窗口包含 0 条快照，失败 0 次；同组合近 24 小时新增 401 1 次。",
+        "signal_count": 1,
         "signals": [
             {
                 "key": "peer_group_hot",
@@ -1288,18 +1287,12 @@ def test_account_detail_returns_cohort_research_summary() -> None:
                 "tone": "danger",
                 "detail": "同 provider + 类型组合当前 401 率 33.33% ，近 24 小时新增 401 1 次。",
             },
-            {
-                "key": "peer_rank_top",
-                "label": "同组合额度排名靠前",
-                "tone": "warning",
-                "detail": "当前账号周额度排名 1 / 2，短周期排名 1 / 2。",
-            },
         ],
     }
     assert len(payload["provider_account_type_trend"]) == 24
     assert sum(point["snapshot_count"] for point in payload["provider_account_type_trend"]) == 1
     assert sum(point["is_401_count"] for point in payload["provider_account_type_trend"]) == 1
-    assert sum(point["invalid_quota_count"] for point in payload["provider_account_type_trend"]) == 1
+    assert sum(point["invalid_quota_count"] for point in payload["provider_account_type_trend"]) == 0
 
     app.dependency_overrides.clear()
 

@@ -18,7 +18,6 @@ const filters = reactive({
   provider: "",
   account_type: "",
   current_is_401: "",
-  current_invalid_quota: "",
   disabled: "",
   include_deleted: false,
 });
@@ -32,7 +31,6 @@ async function loadAccounts() {
       provider: filters.provider || undefined,
       account_type: filters.account_type || undefined,
       current_is_401: toBooleanQuery(filters.current_is_401),
-      current_invalid_quota: toBooleanQuery(filters.current_invalid_quota),
       disabled: toBooleanQuery(filters.disabled),
       include_deleted: filters.include_deleted,
       limit: pageSize,
@@ -49,7 +47,6 @@ function resetFilters() {
   filters.provider = "";
   filters.account_type = "";
   filters.current_is_401 = "";
-  filters.current_invalid_quota = "";
   filters.disabled = "";
   filters.include_deleted = false;
   offset.value = 0;
@@ -90,11 +87,6 @@ onMounted(() => {
         <option value="">401 状态</option>
         <option value="true">当前 401</option>
         <option value="false">当前非 401</option>
-      </select>
-      <select v-model="filters.current_invalid_quota" class="input-field">
-        <option value="">额度状态</option>
-        <option value="true">额度异常</option>
-        <option value="false">额度正常</option>
       </select>
       <select v-model="filters.disabled" class="input-field">
         <option value="">禁用状态</option>
@@ -146,7 +138,6 @@ onMounted(() => {
               <td>
                 <div class="status-stack">
                   <StatusPill :tone="account.current_is_401 ? 'danger' : 'success'" :text="formatStatusCode(account.current_status_code)" />
-                  <StatusPill :tone="account.current_invalid_quota ? 'warning' : 'muted'" :text="account.current_invalid_quota ? '额度异常' : '额度正常'" />
                   <StatusPill :tone="account.disabled ? 'muted' : 'success'" :text="account.disabled ? '已禁用' : '活跃'" />
                 </div>
               </td>

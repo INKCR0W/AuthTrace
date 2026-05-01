@@ -52,11 +52,6 @@ function cohortSummary(item: DimensionBreakdownItem) {
       <div class="metric-grid">
         <MetricCard label="总账号数" :value="formatCount(overview.total_accounts)" accent="ink" />
         <MetricCard label="当前 401" :value="formatCount(overview.current_401_accounts)" accent="sun" />
-        <MetricCard
-          label="额度异常"
-          :value="formatCount(overview.current_invalid_quota_accounts)"
-          accent="rose"
-        />
         <MetricCard label="活跃账号" :value="formatCount(overview.active_accounts)" accent="teal" />
         <MetricCard label="已禁用" :value="formatCount(overview.disabled_accounts)" />
         <MetricCard label="已删除源账号" :value="formatCount(overview.deleted_accounts)" />
@@ -65,12 +60,6 @@ function cohortSummary(item: DimensionBreakdownItem) {
           :value="formatCount(overview.new_401_events_last_24h)"
           hint="事件表口径"
           accent="sun"
-        />
-        <MetricCard
-          label="24h 新增额度异常"
-          :value="formatCount(overview.new_quota_events_last_24h)"
-          hint="事件表口径"
-          accent="rose"
         />
       </div>
 
@@ -148,7 +137,6 @@ function cohortSummary(item: DimensionBreakdownItem) {
                   <th>当前 401</th>
                   <th>24h 新增 401</th>
                   <th>401 率</th>
-                  <th>额度异常率</th>
                 </tr>
               </thead>
               <tbody>
@@ -161,7 +149,6 @@ function cohortSummary(item: DimensionBreakdownItem) {
                   <td>{{ formatCount(item.current_401_accounts) }}</td>
                   <td>{{ formatCount(item.became_401_events_last_24h) }}</td>
                   <td>{{ formatPercent(item.current_401_rate) }}</td>
-                  <td>{{ formatPercent(item.current_invalid_quota_rate) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -186,7 +173,6 @@ function cohortSummary(item: DimensionBreakdownItem) {
                   <th>当前 401</th>
                   <th>24h 新增 401</th>
                   <th>401 率</th>
-                  <th>额度异常率</th>
                 </tr>
               </thead>
               <tbody>
@@ -199,7 +185,6 @@ function cohortSummary(item: DimensionBreakdownItem) {
                   <td>{{ formatCount(item.current_401_accounts) }}</td>
                   <td>{{ formatCount(item.became_401_events_last_24h) }}</td>
                   <td>{{ formatPercent(item.current_401_rate) }}</td>
-                  <td>{{ formatPercent(item.current_invalid_quota_rate) }}</td>
                 </tr>
               </tbody>
             </table>

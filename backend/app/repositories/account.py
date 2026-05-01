@@ -315,23 +315,8 @@ def _build_account_cohort_breakdown(
             func.sum(case((Account.disabled.is_(True), 1), else_=0)).label("disabled_accounts"),
             func.sum(case((Account.current_is_401.is_(True), 1), else_=0)).label("current_401_accounts"),
             func.sum(
-                case((Account.current_invalid_quota.is_(True), 1), else_=0)
-            ).label("current_invalid_quota_accounts"),
-            func.sum(
                 case((Account.current_last_checked_at >= last_24h_start, 1), else_=0)
             ).label("checked_accounts_last_24h"),
-            func.sum(
-                case((Account.current_weekly_used_percent >= 80, 1), else_=0)
-            ).label("high_weekly_accounts"),
-            func.sum(
-                case((Account.current_short_used_percent >= 80, 1), else_=0)
-            ).label("high_short_accounts"),
-            func.sum(
-                case((Account.current_limit_reached.is_(True), 1), else_=0)
-            ).label("current_limit_reached_accounts"),
-            func.sum(
-                case((Account.current_allowed.is_(False), 1), else_=0)
-            ).label("current_blocked_accounts"),
         ).where(*account_conditions)
     ).one()
 
@@ -345,7 +330,7 @@ def _build_account_cohort_breakdown(
         .where(
             *account_conditions,
             AccountEvent.event_time >= last_24h_start,
-            AccountEvent.event_type.in_(("became_401", "quota_exhausted")),
+            AccountEvent.event_type == "became_401",
         )
         .group_by(AccountEvent.event_type)
     ).all()
@@ -353,7 +338,6 @@ def _build_account_cohort_breakdown(
 
     total_accounts = int(account_row.total_accounts or 0)
     current_401_accounts = int(account_row.current_401_accounts or 0)
-    current_invalid_quota_accounts = int(account_row.current_invalid_quota_accounts or 0)
 
     return AccountCohortBreakdown(
         label=label,
@@ -363,22 +347,19 @@ def _build_account_cohort_breakdown(
         active_accounts=int(account_row.active_accounts or 0),
         disabled_accounts=int(account_row.disabled_accounts or 0),
         current_401_accounts=current_401_accounts,
-        current_invalid_quota_accounts=current_invalid_quota_accounts,
+        current_invalid_quota_accounts=0,
         became_401_events_last_24h=event_counts.get("became_401", 0),
-        quota_exhausted_events_last_24h=event_counts.get("quota_exhausted", 0),
+        quota_exhausted_events_last_24h=0,
         checked_accounts_last_24h=int(account_row.checked_accounts_last_24h or 0),
-        high_weekly_accounts=int(account_row.high_weekly_accounts or 0),
-        high_short_accounts=int(account_row.high_short_accounts or 0),
-        current_limit_reached_accounts=int(account_row.current_limit_reached_accounts or 0),
-        current_blocked_accounts=int(account_row.current_blocked_accounts or 0),
+        high_weekly_accounts=0,
+        high_short_accounts=0,
+        current_limit_reached_accounts=0,
+        current_blocked_accounts=0,
         current_401_rate=_to_rate_percent(
             numerator=current_401_accounts,
             denominator=total_accounts,
         ),
-        current_invalid_quota_rate=_to_rate_percent(
-            numerator=current_invalid_quota_accounts,
-            denominator=total_accounts,
-        ),
+        current_invalid_quota_rate=0.0,
     )
 
 
@@ -429,17 +410,6 @@ def _build_risk_overview(
         None,
     )
     failed_snapshots = [snapshot for snapshot in snapshots if snapshot.snapshot_status != "success"]
-    blocked_snapshots = [
-        snapshot
-        for snapshot in snapshots
-        if snapshot.invalid_quota or snapshot.limit_reached is True or snapshot.allowed is False
-    ]
-    high_weekly_snapshots = [
-        snapshot for snapshot in snapshots if _decimal_gte(snapshot.weekly_used_percent, Decimal("80"))
-    ]
-    high_short_snapshots = [
-        snapshot for snapshot in snapshots if _decimal_gte(snapshot.short_used_percent, Decimal("80"))
-    ]
 
     score = 0
     signals: list[AccountRiskSignal] = []
@@ -487,43 +457,6 @@ def _build_risk_overview(
             )
         )
 
-    if account.current_invalid_quota or account.current_limit_reached is True or account.current_allowed is False:
-        score += 2
-        signals.append(
-            AccountRiskSignal(
-                key="current_quota_pressure",
-                label="当前额度受压",
-                tone="warning",
-                detail="当前账号已出现额度异常、达到限制或被判定为不允许继续使用。",
-            )
-        )
-
-    if _decimal_gte(account.current_weekly_used_percent, Decimal("95")) or _decimal_gte(
-        account.current_short_used_percent, Decimal("95")
-    ):
-        score += 2
-        signals.append(
-            AccountRiskSignal(
-                key="current_usage_peak",
-                label="当前额度接近峰值",
-                tone="warning",
-                detail="当前周额度或短周期额度已达到 95% 以上，属于高风险消耗区间。",
-            )
-        )
-    elif high_weekly_snapshots or high_short_snapshots:
-        score += 1
-        signals.append(
-            AccountRiskSignal(
-                key="recent_usage_heat",
-                label="近期多次高压",
-                tone="warning",
-                detail=(
-                    f"最近窗口内周额度高压 {len(high_weekly_snapshots)} 次，"
-                    f"短周期高压 {len(high_short_snapshots)} 次。"
-                ),
-            )
-        )
-
     if failed_snapshots:
         score += 1
         signals.append(
@@ -532,17 +465,6 @@ def _build_risk_overview(
                 label="检测链路不稳定",
                 tone="warning",
                 detail=f"最近窗口内共有 {len(failed_snapshots)} 条非 success 快照，联调时需要同时检查管理端与解析失败路径。",
-            )
-        )
-
-    if blocked_snapshots:
-        score += 1
-        signals.append(
-            AccountRiskSignal(
-                key="blocked_snapshots",
-                label="历史快照出现受限",
-                tone="warning",
-                detail=f"最近窗口内共有 {len(blocked_snapshots)} 条快照出现额度异常、限制命中或 blocked 信号。",
             )
         )
 
@@ -562,47 +484,10 @@ def _build_risk_overview(
                 ),
             )
         )
-    elif (
-        provider_account_type_cohort.current_invalid_quota_rate >= 30
-        or provider_account_type_cohort.current_blocked_accounts > 0
-    ):
-        score += 1
-        signals.append(
-            AccountRiskSignal(
-                key="peer_group_pressure",
-                label="同组合存在压力",
-                tone="warning",
-                detail=(
-                    f"同组合当前额度异常率 {provider_account_type_cohort.current_invalid_quota_rate}% ，"
-                    f"受限账号 {provider_account_type_cohort.current_blocked_accounts} 个。"
-                ),
-            )
-        )
-
-    if _is_top_rank(
-        rank=usage_position.weekly_rank_desc,
-        sample_count=usage_position.weekly_compared_accounts,
-    ) or _is_top_rank(
-        rank=usage_position.short_rank_desc,
-        sample_count=usage_position.short_compared_accounts,
-    ):
-        score += 1
-        signals.append(
-            AccountRiskSignal(
-                key="peer_rank_top",
-                label="同组合额度排名靠前",
-                tone="warning",
-                detail=(
-                    f"当前账号周额度排名 {usage_position.weekly_rank_desc or '-'} / {usage_position.weekly_compared_accounts}，"
-                    f"短周期排名 {usage_position.short_rank_desc or '-'} / {usage_position.short_compared_accounts}。"
-                ),
-            )
-        )
 
     level, headline = _summarize_risk_level(score=score)
     summary = (
         f"最近窗口包含 {len(snapshots)} 条快照，"
-        f"高压 {len(high_weekly_snapshots) + len(high_short_snapshots)} 次，"
         f"失败 {len(failed_snapshots)} 次；"
         f"同组合近 24 小时新增 401 {provider_account_type_cohort.became_401_events_last_24h} 次。"
     )
@@ -613,7 +498,7 @@ def _build_risk_overview(
                 key="stable_window",
                 label="窗口内相对平稳",
                 tone="success",
-                detail="最近窗口内未发现明显 401、额度异常或失败聚集信号。",
+                detail="最近窗口内未发现明显 401 或失败聚集信号。",
             )
         )
 
@@ -668,10 +553,7 @@ def _build_account_cohort_trend(
             continue
         trend_point.snapshot_count += 1
         trend_point.is_401_count += int(snapshot.is_401)
-        trend_point.invalid_quota_count += int(snapshot.invalid_quota)
         trend_point.failed_count += int(snapshot.snapshot_status != "success")
-        trend_point.high_weekly_count += int(_decimal_gte(snapshot.weekly_used_percent, Decimal("80")))
-        trend_point.high_short_count += int(_decimal_gte(snapshot.short_used_percent, Decimal("80")))
 
     return [bucket_map[bucket_start] for bucket_start in bucket_starts]
 

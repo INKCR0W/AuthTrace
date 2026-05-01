@@ -19,7 +19,7 @@ const navItems = [
         <p class="eyebrow">AuthTrace</p>
         <h1>账号状态时序观测台</h1>
         <p class="hero-text">
-          聚焦 401、额度异常与状态变迁，把每次扫描结果串成可回看的样本链路。
+          聚焦 401 与状态变迁，把每次扫描结果串成可回看的样本链路。
         </p>
       </div>
       <nav class="nav-tabs" aria-label="主导航">
