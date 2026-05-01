@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest.mock import patch
 
 import httpx
@@ -1736,8 +1737,196 @@ def test_scan_job_query_apis_return_paginated_runs_and_error_details() -> None:
     assert detail_payload["item"]["status"] == "running"
     assert detail_payload["item"]["scan_finished_at"] is None
     assert detail_payload["item"]["error_message"] is None
+    assert detail_payload["snapshot_stats"] == {
+        "total_snapshots": 0,
+        "success_snapshots": 0,
+        "partial_failed_snapshots": 0,
+        "failed_snapshots": 0,
+        "is_401_snapshots": 0,
+        "invalid_quota_snapshots": 0,
+    }
+    assert detail_payload["recent_failure_samples"] == []
+    assert detail_payload["recent_401_samples"] == []
+    assert detail_payload["recent_quota_samples"] == []
 
     missing_response = asyncio.run(_request("GET", "/api/v1/scan-jobs/999"))
     assert missing_response.status_code == 404
+
+    app.dependency_overrides.clear()
+
+
+def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        seen_at = datetime(2026, 5, 2, 9, 55, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="partial_failed",
+            scan_started_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            scan_finished_at=datetime(2026, 5, 2, 10, 4, tzinfo=timezone.utc),
+            total_accounts=4,
+            eligible_accounts=4,
+            scanned_accounts=4,
+            success_accounts=2,
+            failed_accounts=2,
+            new_401_events=1,
+            new_quota_events=1,
+            duration_ms=240000,
+            error_message="2 probes failed",
+        )
+        db.add(scan_job)
+        db.flush()
+        scan_job_id = scan_job.id
+
+        account_ok = Account(
+            source_id=source.id,
+            auth_index="auth-ok",
+            name="账号-正常",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            first_seen_at=seen_at,
+            last_seen_at=seen_at,
+        )
+        account_401 = Account(
+            source_id=source.id,
+            auth_index="auth-401",
+            name="账号-401",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            first_seen_at=seen_at,
+            last_seen_at=seen_at,
+        )
+        account_quota = Account(
+            source_id=source.id,
+            auth_index="auth-quota",
+            name="账号-额度",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            first_seen_at=seen_at,
+            last_seen_at=seen_at,
+        )
+        account_failed = Account(
+            source_id=source.id,
+            auth_index="auth-failed",
+            name="账号-失败",
+            provider="azure",
+            account_type="api",
+            disabled=True,
+            first_seen_at=seen_at,
+            last_seen_at=seen_at,
+        )
+        db.add_all([account_ok, account_401, account_quota, account_failed])
+        db.flush()
+
+        db.add_all(
+                [
+                    AccountSnapshot(
+                        account_id=account_ok.id,
+                        scan_job_id=scan_job.id,
+                        checked_at=datetime(2026, 5, 2, 10, 1, tzinfo=timezone.utc),
+                        created_at=datetime(2026, 5, 2, 10, 1, tzinfo=timezone.utc),
+                        snapshot_status="success",
+                        probe_status_code=200,
+                        is_401=False,
+                        invalid_quota=False,
+                        remaining=Decimal("21.50"),
+                ),
+                    AccountSnapshot(
+                        account_id=account_401.id,
+                        scan_job_id=scan_job.id,
+                        checked_at=datetime(2026, 5, 2, 10, 2, tzinfo=timezone.utc),
+                        created_at=datetime(2026, 5, 2, 10, 2, tzinfo=timezone.utc),
+                        snapshot_status="success",
+                        probe_status_code=401,
+                        is_401=True,
+                        invalid_quota=False,
+                        error_message=None,
+                ),
+                    AccountSnapshot(
+                        account_id=account_quota.id,
+                        scan_job_id=scan_job.id,
+                        checked_at=datetime(2026, 5, 2, 10, 3, tzinfo=timezone.utc),
+                        created_at=datetime(2026, 5, 2, 10, 3, tzinfo=timezone.utc),
+                        snapshot_status="partial_failed",
+                        probe_status_code=200,
+                        is_401=False,
+                        invalid_quota=True,
+                        weekly_used_percent=Decimal("96.00"),
+                    remaining=Decimal("0"),
+                    error_message="usage body 不是有效 JSON 对象",
+                    status_message="quota_exceeded",
+                ),
+                    AccountSnapshot(
+                        account_id=account_failed.id,
+                        scan_job_id=scan_job.id,
+                        checked_at=datetime(2026, 5, 2, 10, 4, tzinfo=timezone.utc),
+                        created_at=datetime(2026, 5, 2, 10, 4, tzinfo=timezone.utc),
+                        snapshot_status="failed",
+                        probe_status_code=None,
+                        is_401=False,
+                        invalid_quota=False,
+                        error_message="probe timeout",
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", f"/api/v1/scan-jobs/{scan_job_id}"))
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["item"]["id"] == scan_job_id
+    assert payload["snapshot_stats"] == {
+        "total_snapshots": 4,
+        "success_snapshots": 2,
+        "partial_failed_snapshots": 1,
+        "failed_snapshots": 1,
+        "is_401_snapshots": 1,
+        "invalid_quota_snapshots": 1,
+    }
+
+    assert [item["account"]["auth_index"] for item in payload["recent_failure_samples"]] == [
+        "auth-failed",
+        "auth-quota",
+    ]
+    assert payload["recent_failure_samples"][0]["error_message"] == "probe timeout"
+    assert payload["recent_failure_samples"][0]["account"]["disabled"] is True
+
+    assert [item["account"]["auth_index"] for item in payload["recent_401_samples"]] == ["auth-401"]
+    assert payload["recent_401_samples"][0]["probe_status_code"] == 401
+
+    assert [item["account"]["auth_index"] for item in payload["recent_quota_samples"]] == ["auth-quota"]
+    assert payload["recent_quota_samples"][0]["weekly_used_percent"] == "96.00"
+    assert payload["recent_quota_samples"][0]["status_message"] == "quota_exceeded"
 
     app.dependency_overrides.clear()

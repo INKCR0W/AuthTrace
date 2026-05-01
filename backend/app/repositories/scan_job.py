@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.orm import Session
 
+from app.models.account import Account
+from app.models.account_snapshot import AccountSnapshot
 from app.models.scan_job import ScanJob
 
 
@@ -18,6 +20,31 @@ class ScanJobListFilters:
     started_to: datetime | None = None
     limit: int = 50
     offset: int = 0
+
+
+@dataclass(slots=True)
+class ScanJobSnapshotStats:
+    total_snapshots: int
+    success_snapshots: int
+    partial_failed_snapshots: int
+    failed_snapshots: int
+    is_401_snapshots: int
+    invalid_quota_snapshots: int
+
+
+@dataclass(slots=True)
+class ScanJobSnapshotSampleRow:
+    snapshot: AccountSnapshot
+    account: Account
+
+
+@dataclass(slots=True)
+class ScanJobDetail:
+    scan_job: ScanJob
+    snapshot_stats: ScanJobSnapshotStats
+    recent_failure_samples: list[ScanJobSnapshotSampleRow]
+    recent_401_samples: list[ScanJobSnapshotSampleRow]
+    recent_quota_samples: list[ScanJobSnapshotSampleRow]
 
 
 def create_scan_job(
@@ -83,6 +110,60 @@ def get_scan_job(
     return db.get(ScanJob, scan_job_id)
 
 
+def get_scan_job_detail(
+    db: Session,
+    *,
+    scan_job_id: int,
+    sample_limit: int = 5,
+) -> ScanJobDetail | None:
+    scan_job = db.get(ScanJob, scan_job_id)
+    if scan_job is None:
+        return None
+
+    stats_row = db.execute(
+        select(
+            func.count(AccountSnapshot.id),
+            func.sum(case((AccountSnapshot.snapshot_status == "success", 1), else_=0)),
+            func.sum(case((AccountSnapshot.snapshot_status == "partial_failed", 1), else_=0)),
+            func.sum(case((AccountSnapshot.snapshot_status == "failed", 1), else_=0)),
+            func.sum(case((AccountSnapshot.is_401.is_(True), 1), else_=0)),
+            func.sum(case((AccountSnapshot.invalid_quota.is_(True), 1), else_=0)),
+        ).where(AccountSnapshot.scan_job_id == scan_job_id)
+    ).one()
+
+    snapshot_stats = ScanJobSnapshotStats(
+        total_snapshots=int(stats_row[0] or 0),
+        success_snapshots=int(stats_row[1] or 0),
+        partial_failed_snapshots=int(stats_row[2] or 0),
+        failed_snapshots=int(stats_row[3] or 0),
+        is_401_snapshots=int(stats_row[4] or 0),
+        invalid_quota_snapshots=int(stats_row[5] or 0),
+    )
+
+    return ScanJobDetail(
+        scan_job=scan_job,
+        snapshot_stats=snapshot_stats,
+        recent_failure_samples=_list_snapshot_samples(
+            db,
+            scan_job_id=scan_job_id,
+            sample_limit=sample_limit,
+            filter_expression=AccountSnapshot.snapshot_status.in_(("partial_failed", "failed")),
+        ),
+        recent_401_samples=_list_snapshot_samples(
+            db,
+            scan_job_id=scan_job_id,
+            sample_limit=sample_limit,
+            filter_expression=AccountSnapshot.is_401.is_(True),
+        ),
+        recent_quota_samples=_list_snapshot_samples(
+            db,
+            scan_job_id=scan_job_id,
+            sample_limit=sample_limit,
+            filter_expression=AccountSnapshot.invalid_quota.is_(True),
+        ),
+    )
+
+
 def _apply_scan_job_filters(statement: Select, *, filters: ScanJobListFilters) -> Select:
     if filters.source_id is not None:
         statement = statement.where(ScanJob.source_id == filters.source_id)
@@ -95,3 +176,20 @@ def _apply_scan_job_filters(statement: Select, *, filters: ScanJobListFilters) -
     if filters.started_to is not None:
         statement = statement.where(ScanJob.scan_started_at <= filters.started_to)
     return statement
+
+
+def _list_snapshot_samples(
+    db: Session,
+    *,
+    scan_job_id: int,
+    sample_limit: int,
+    filter_expression: object,
+) -> list[ScanJobSnapshotSampleRow]:
+    rows = db.execute(
+        select(AccountSnapshot, Account)
+        .join(Account, Account.id == AccountSnapshot.account_id)
+        .where(AccountSnapshot.scan_job_id == scan_job_id, filter_expression)
+        .order_by(AccountSnapshot.checked_at.desc(), AccountSnapshot.id.desc())
+        .limit(sample_limit)
+    ).all()
+    return [ScanJobSnapshotSampleRow(snapshot=snapshot, account=account) for snapshot, account in rows]

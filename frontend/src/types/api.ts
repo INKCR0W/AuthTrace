@@ -55,8 +55,45 @@ export interface ScanJobListResponse {
   items: LatestScanJobSummary[];
 }
 
+export interface ScanJobSnapshotStats {
+  total_snapshots: number;
+  success_snapshots: number;
+  partial_failed_snapshots: number;
+  failed_snapshots: number;
+  is_401_snapshots: number;
+  invalid_quota_snapshots: number;
+}
+
+export interface ScanJobAccountRef {
+  id: number;
+  name: string;
+  auth_index: string;
+  provider: string | null;
+  account_type: string | null;
+  disabled: boolean;
+}
+
+export interface ScanJobSnapshotSample {
+  id: number;
+  checked_at: string;
+  snapshot_status: string;
+  probe_status_code: number | null;
+  is_401: boolean;
+  invalid_quota: boolean;
+  weekly_used_percent: string | null;
+  short_used_percent: string | null;
+  remaining: string | null;
+  status_message: string | null;
+  error_message: string | null;
+  account: ScanJobAccountRef;
+}
+
 export interface ScanJobDetailResponse {
   item: LatestScanJobSummary;
+  snapshot_stats: ScanJobSnapshotStats;
+  recent_failure_samples: ScanJobSnapshotSample[];
+  recent_401_samples: ScanJobSnapshotSample[];
+  recent_quota_samples: ScanJobSnapshotSample[];
 }
 
 export interface AccountSummary {

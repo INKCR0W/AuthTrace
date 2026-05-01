@@ -6,8 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.scan_job import ScanJobListFilters, get_scan_job, list_scan_jobs
-from app.schemas.scan_job import ScanJobDetailResponse, ScanJobListResponse, ScanJobSummary
+from app.repositories.scan_job import (
+    ScanJobListFilters,
+    ScanJobSnapshotSampleRow,
+    get_scan_job_detail as fetch_scan_job_detail,
+    list_scan_jobs,
+)
+from app.schemas.scan_job import (
+    ScanJobAccountRef,
+    ScanJobDetailResponse,
+    ScanJobListResponse,
+    ScanJobSnapshotSample,
+    ScanJobSnapshotStats,
+    ScanJobSummary,
+)
 
 
 router = APIRouter()
@@ -49,8 +61,40 @@ def get_scan_job_detail(
     scan_job_id: int,
     db: Session = Depends(get_db_session),
 ) -> ScanJobDetailResponse:
-    scan_job = get_scan_job(db, scan_job_id=scan_job_id)
-    if scan_job is None:
+    detail = fetch_scan_job_detail(db, scan_job_id=scan_job_id)
+    if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="扫描任务不存在")
 
-    return ScanJobDetailResponse(item=ScanJobSummary.model_validate(scan_job))
+    return ScanJobDetailResponse(
+        item=ScanJobSummary.model_validate(detail.scan_job),
+        snapshot_stats=ScanJobSnapshotStats.model_validate(detail.snapshot_stats),
+        recent_failure_samples=[_serialize_snapshot_sample(item) for item in detail.recent_failure_samples],
+        recent_401_samples=[_serialize_snapshot_sample(item) for item in detail.recent_401_samples],
+        recent_quota_samples=[_serialize_snapshot_sample(item) for item in detail.recent_quota_samples],
+    )
+
+
+def _serialize_snapshot_sample(item: ScanJobSnapshotSampleRow) -> ScanJobSnapshotSample:
+    snapshot = item.snapshot
+    account = item.account
+    return ScanJobSnapshotSample(
+        id=snapshot.id,
+        checked_at=snapshot.checked_at,
+        snapshot_status=snapshot.snapshot_status,
+        probe_status_code=snapshot.probe_status_code,
+        is_401=snapshot.is_401,
+        invalid_quota=snapshot.invalid_quota,
+        weekly_used_percent=snapshot.weekly_used_percent,
+        short_used_percent=snapshot.short_used_percent,
+        remaining=snapshot.remaining,
+        status_message=snapshot.status_message,
+        error_message=snapshot.error_message,
+        account=ScanJobAccountRef(
+            id=account.id,
+            name=account.name,
+            auth_index=account.auth_index,
+            provider=account.provider,
+            account_type=account.account_type,
+            disabled=account.disabled,
+        ),
+    )

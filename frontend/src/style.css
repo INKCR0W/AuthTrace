@@ -419,6 +419,11 @@ select {
   color: var(--ink);
 }
 
+.compact-button {
+  min-height: 30px;
+  padding: 6px 12px;
+}
+
 .ghost-button:disabled {
   opacity: 0.42;
   cursor: not-allowed;
@@ -511,6 +516,21 @@ select {
 .timeline-list {
   display: grid;
   gap: 14px;
+}
+
+.scan-job-detail-block,
+.sample-column {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.sample-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sample-panel {
+  padding: 18px;
 }
 
 .event-type,
