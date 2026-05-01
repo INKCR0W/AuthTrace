@@ -14,6 +14,7 @@ from app.repositories.scan_job import (
 )
 from app.schemas.scan_job import (
     ScanJobAccountRef,
+    ScanJobDiagnosticSummary,
     ScanJobDetailResponse,
     ScanJobListResponse,
     ScanJobSnapshotSample,
@@ -68,6 +69,7 @@ def get_scan_job_detail(
     return ScanJobDetailResponse(
         item=ScanJobSummary.model_validate(detail.scan_job),
         snapshot_stats=ScanJobSnapshotStats.model_validate(detail.snapshot_stats),
+        diagnostic_summary=ScanJobDiagnosticSummary.model_validate(detail.diagnostic_summary),
         recent_failure_samples=[_serialize_snapshot_sample(item) for item in detail.recent_failure_samples],
         recent_401_samples=[_serialize_snapshot_sample(item) for item in detail.recent_401_samples],
         recent_quota_samples=[_serialize_snapshot_sample(item) for item in detail.recent_quota_samples],

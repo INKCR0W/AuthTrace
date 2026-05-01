@@ -10,10 +10,11 @@ import {
 } from "@/api/client";
 import JsonPayloadViewer from "@/components/JsonPayloadViewer.vue";
 import StatusPill from "@/components/StatusPill.vue";
-import { formatCount, formatDateTime, formatDurationMs, formatPercent } from "@/lib/format";
+import { formatCount, formatDateTime, formatDurationMs, formatPercent, formatRemaining } from "@/lib/format";
 import type {
   AuthFileSyncConflictDetail,
   DefaultManagementSourceResponse,
+  ScanJobDiagnosticBucket,
   ScanJobDetailResponse,
   ScanJobListResponse,
   ScanJobSnapshotSample,
@@ -161,8 +162,15 @@ function sampleTone(sample: ScanJobSnapshotSample) {
 function quotaSummary(sample: ScanJobSnapshotSample) {
   const weekly = sample.weekly_used_percent ? `周额度 ${formatPercent(Number(sample.weekly_used_percent))}` : "周额度无记录";
   const short = sample.short_used_percent ? `短周期 ${formatPercent(Number(sample.short_used_percent))}` : "短周期无记录";
-  const remaining = sample.remaining ? `剩余 ${sample.remaining}` : "剩余额度无记录";
+  const remaining = sample.remaining !== null ? `剩余 ${formatRemaining(sample.remaining)}` : "剩余额度无记录";
   return `${weekly} / ${short} / ${remaining}`;
+}
+
+function formatDiagnosticBuckets(items: ScanJobDiagnosticBucket[], emptyText: string) {
+  if (!items.length) {
+    return emptyText;
+  }
+  return items.map((item) => `${item.label} × ${formatCount(item.count)}`).join(" / ");
 }
 
 function sourceScopeSummary() {
@@ -505,6 +513,29 @@ onMounted(() => {
                   <p class="subtle-label">风险覆盖</p>
                   <p>401 样本 {{ formatCount(detailResult.snapshot_stats.is_401_snapshots) }}</p>
                   <p class="subtle-line">失败快照 {{ formatCount(detailResult.snapshot_stats.failed_snapshots) }}</p>
+                </div>
+                <div>
+                  <p class="subtle-label">探测状态码</p>
+                  <p>非 200 / 缺失状态码 {{ formatCount(detailResult.diagnostic_summary.abnormal_probe_status_samples) }}</p>
+                  <p class="subtle-line">
+                    {{
+                      formatDiagnosticBuckets(
+                        detailResult.diagnostic_summary.abnormal_probe_status_breakdown,
+                        "这一轮没有非 200 或缺失状态码样本。",
+                      )
+                    }}
+                  </p>
+                </div>
+                <div>
+                  <p class="subtle-label">高频失败原因</p>
+                  <p>
+                    {{
+                      formatDiagnosticBuckets(
+                        detailResult.diagnostic_summary.top_failure_reasons,
+                        "这一轮没有失败文案或额外错误信息。",
+                      )
+                    }}
+                  </p>
                 </div>
               </div>
 

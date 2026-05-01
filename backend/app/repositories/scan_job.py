@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import Select, case, func, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.account import Account
@@ -39,9 +40,24 @@ class ScanJobSnapshotSampleRow:
 
 
 @dataclass(slots=True)
+class ScanJobDiagnosticBucket:
+    key: str
+    label: str
+    count: int
+
+
+@dataclass(slots=True)
+class ScanJobDiagnosticSummary:
+    abnormal_probe_status_samples: int
+    abnormal_probe_status_breakdown: list[ScanJobDiagnosticBucket]
+    top_failure_reasons: list[ScanJobDiagnosticBucket]
+
+
+@dataclass(slots=True)
 class ScanJobDetail:
     scan_job: ScanJob
     snapshot_stats: ScanJobSnapshotStats
+    diagnostic_summary: ScanJobDiagnosticSummary
     recent_failure_samples: list[ScanJobSnapshotSampleRow]
     recent_401_samples: list[ScanJobSnapshotSampleRow]
     recent_quota_samples: list[ScanJobSnapshotSampleRow]
@@ -143,6 +159,10 @@ def get_scan_job_detail(
     return ScanJobDetail(
         scan_job=scan_job,
         snapshot_stats=snapshot_stats,
+        diagnostic_summary=_build_diagnostic_summary(
+            db,
+            scan_job_id=scan_job_id,
+        ),
         recent_failure_samples=_list_snapshot_samples(
             db,
             scan_job_id=scan_job_id,
@@ -193,3 +213,78 @@ def _list_snapshot_samples(
         .limit(sample_limit)
     ).all()
     return [ScanJobSnapshotSampleRow(snapshot=snapshot, account=account) for snapshot, account in rows]
+
+
+def _build_diagnostic_summary(
+    db: Session,
+    *,
+    scan_job_id: int,
+) -> ScanJobDiagnosticSummary:
+    abnormal_status_rows = db.execute(
+        select(
+            AccountSnapshot.probe_status_code,
+            func.count(AccountSnapshot.id),
+        )
+        .where(
+            AccountSnapshot.scan_job_id == scan_job_id,
+            or_(
+                AccountSnapshot.probe_status_code.is_(None),
+                AccountSnapshot.probe_status_code != 200,
+            ),
+        )
+        .group_by(AccountSnapshot.probe_status_code)
+    ).all()
+
+    abnormal_probe_status_breakdown = sorted(
+        [
+            ScanJobDiagnosticBucket(
+                key="none" if status_code is None else str(status_code),
+                label=_format_probe_status_label(status_code),
+                count=int(count or 0),
+            )
+            for status_code, count in abnormal_status_rows
+            if int(count or 0) > 0
+        ],
+        key=lambda item: (-item.count, item.label),
+    )
+
+    failure_reason_rows = db.scalars(
+        select(AccountSnapshot).where(
+            AccountSnapshot.scan_job_id == scan_job_id,
+            AccountSnapshot.snapshot_status.in_(("partial_failed", "failed")),
+        )
+    ).all()
+
+    reason_counter = Counter(_classify_failure_reason(snapshot) for snapshot in failure_reason_rows)
+    sorted_failure_reasons = sorted(
+        reason_counter.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+    top_failure_reasons = [
+        ScanJobDiagnosticBucket(key=reason, label=reason, count=count)
+        for reason, count in sorted_failure_reasons[:5]
+    ]
+
+    return ScanJobDiagnosticSummary(
+        abnormal_probe_status_samples=sum(item.count for item in abnormal_probe_status_breakdown),
+        abnormal_probe_status_breakdown=abnormal_probe_status_breakdown,
+        top_failure_reasons=top_failure_reasons,
+    )
+
+
+def _format_probe_status_label(status_code: int | None) -> str:
+    if status_code is None:
+        return "未返回状态码"
+    return f"HTTP {status_code}"
+
+
+def _classify_failure_reason(snapshot: AccountSnapshot) -> str:
+    if snapshot.error_message and snapshot.error_message.strip():
+        return snapshot.error_message.strip()
+    if snapshot.status_message and snapshot.status_message.strip():
+        return snapshot.status_message.strip()
+    if snapshot.probe_status_code is None:
+        return "未返回状态码"
+    if snapshot.probe_status_code == 200:
+        return "已返回 200，但快照仍失败"
+    return f"HTTP {snapshot.probe_status_code}"

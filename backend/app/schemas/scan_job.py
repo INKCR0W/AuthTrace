@@ -45,6 +45,22 @@ class ScanJobSnapshotStats(BaseModel):
     invalid_quota_snapshots: int
 
 
+class ScanJobDiagnosticBucket(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    label: str
+    count: int
+
+
+class ScanJobDiagnosticSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    abnormal_probe_status_samples: int
+    abnormal_probe_status_breakdown: list[ScanJobDiagnosticBucket] = Field(default_factory=list)
+    top_failure_reasons: list[ScanJobDiagnosticBucket] = Field(default_factory=list)
+
+
 class ScanJobAccountRef(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +103,7 @@ class ScanJobSnapshotSample(BaseModel):
 class ScanJobDetailResponse(BaseModel):
     item: ScanJobSummary
     snapshot_stats: ScanJobSnapshotStats
+    diagnostic_summary: ScanJobDiagnosticSummary
     recent_failure_samples: list[ScanJobSnapshotSample] = Field(default_factory=list)
     recent_401_samples: list[ScanJobSnapshotSample] = Field(default_factory=list)
     recent_quota_samples: list[ScanJobSnapshotSample] = Field(default_factory=list)

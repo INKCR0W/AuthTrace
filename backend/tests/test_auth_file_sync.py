@@ -1742,6 +1742,11 @@ def test_scan_job_query_apis_return_paginated_runs_and_error_details() -> None:
         "is_401_snapshots": 0,
         "invalid_quota_snapshots": 0,
     }
+    assert detail_payload["diagnostic_summary"] == {
+        "abnormal_probe_status_samples": 0,
+        "abnormal_probe_status_breakdown": [],
+        "top_failure_reasons": [],
+    }
     assert detail_payload["recent_failure_samples"] == []
     assert detail_payload["recent_401_samples"] == []
     assert detail_payload["recent_quota_samples"] == []
@@ -1917,6 +1922,17 @@ def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
         "failed_snapshots": 1,
         "is_401_snapshots": 1,
         "invalid_quota_snapshots": 1,
+    }
+    assert payload["diagnostic_summary"] == {
+        "abnormal_probe_status_samples": 2,
+        "abnormal_probe_status_breakdown": [
+            {"key": "401", "label": "HTTP 401", "count": 1},
+            {"key": "none", "label": "未返回状态码", "count": 1},
+        ],
+        "top_failure_reasons": [
+            {"key": "probe timeout", "label": "probe timeout", "count": 1},
+            {"key": "usage body 不是有效 JSON 对象", "label": "usage body 不是有效 JSON 对象", "count": 1},
+        ],
     }
 
     assert [item["account"]["auth_index"] for item in payload["recent_failure_samples"]] == [

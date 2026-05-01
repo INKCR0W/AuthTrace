@@ -107,6 +107,18 @@ export interface ScanJobSnapshotStats {
   invalid_quota_snapshots: number;
 }
 
+export interface ScanJobDiagnosticBucket {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface ScanJobDiagnosticSummary {
+  abnormal_probe_status_samples: number;
+  abnormal_probe_status_breakdown: ScanJobDiagnosticBucket[];
+  top_failure_reasons: ScanJobDiagnosticBucket[];
+}
+
 export interface ScanJobAccountRef {
   id: number;
   name: string;
@@ -145,6 +157,7 @@ export interface ScanJobSnapshotSample {
 export interface ScanJobDetailResponse {
   item: LatestScanJobSummary;
   snapshot_stats: ScanJobSnapshotStats;
+  diagnostic_summary: ScanJobDiagnosticSummary;
   recent_failure_samples: ScanJobSnapshotSample[];
   recent_401_samples: ScanJobSnapshotSample[];
   recent_quota_samples: ScanJobSnapshotSample[];
