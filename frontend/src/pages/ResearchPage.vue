@@ -130,6 +130,15 @@ function currentSignalUsageSummary(item: ResearchCurrentSignalSample) {
   ].join(" / ");
 }
 
+function currentSignalPersistenceSummary(item: ResearchCurrentSignalSample) {
+  const streakLabel = `连续 ${formatCount(item.consecutive_signal_snapshots)} 轮`;
+  if (!item.signal_started_at) {
+    return `${streakLabel}，起点未记录`;
+  }
+
+  return `${streakLabel}，起于 ${formatDateTime(item.signal_started_at)}`;
+}
+
 onMounted(() => {
   void loadOverview();
 });
@@ -293,6 +302,17 @@ onMounted(() => {
             </div>
           </div>
           <p v-else class="feedback">当前筛选范围内仍为非 `401` 的账号里，还没有留下需要继续跟踪的研究信号。</p>
+
+          <div v-if="overview.current_signal_baseline.signal_streak_breakdown.length" class="observation-list">
+            <p class="subtle-label">连续性分布</p>
+            <p
+              v-for="item in overview.current_signal_baseline.signal_streak_breakdown"
+              :key="`streak-${item.key}`"
+              class="observation-item"
+            >
+              {{ item.label }} · {{ formatCount(item.count) }} 个账号
+            </p>
+          </div>
 
           <div
             v-if="
@@ -488,6 +508,7 @@ onMounted(() => {
               </div>
               <div>
                 <p class="subtle-label">已观测信号</p>
+                <p class="subtle-line">{{ currentSignalPersistenceSummary(sample) }}</p>
                 <div class="signal-chip-grid">
                   <div
                     v-for="label in sample.signal_labels"

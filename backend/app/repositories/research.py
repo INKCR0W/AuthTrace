@@ -95,6 +95,8 @@ class ResearchCurrentSignalSample:
     current_allowed: bool | None
     status_message_excerpt: str | None
     signal_labels: list[str]
+    consecutive_signal_snapshots: int
+    signal_started_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -103,6 +105,7 @@ class ResearchCurrentSignalBaseline:
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount]
     signal_pattern_breakdown: list[ResearchBucketCount]
+    signal_streak_breakdown: list[ResearchBucketCount]
     top_status_messages: list[ResearchBucketCount]
     recent_samples: list[ResearchCurrentSignalSample]
 
@@ -393,8 +396,10 @@ def _build_current_signal_baseline(
 
     signal_counter = Counter[str]()
     pattern_counter = Counter[str]()
+    streak_counter = Counter[str]()
     status_counter = Counter[str]()
     samples: list[ResearchCurrentSignalSample] = []
+    signal_accounts: list[tuple[Account, list[str]]] = []
 
     for account in account_rows:
         signal_keys = _extract_account_signal_keys(account)
@@ -403,6 +408,19 @@ def _build_current_signal_baseline(
 
         signal_counter.update(signal_keys)
         pattern_counter["|".join(signal_keys)] += 1
+        signal_accounts.append((account, signal_keys))
+
+    snapshots_by_account_id = _load_success_snapshots_by_account_id(
+        db,
+        account_ids=[account.id for account, _ in signal_accounts],
+    )
+
+    for account, signal_keys in signal_accounts:
+        consecutive_signal_snapshots, signal_started_at = _build_current_signal_streak(
+            account=account,
+            snapshots=snapshots_by_account_id.get(account.id, []),
+        )
+        streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
         status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
         if status_message_excerpt:
             status_counter[status_message_excerpt] += 1
@@ -424,11 +442,14 @@ def _build_current_signal_baseline(
                 current_allowed=account.current_allowed,
                 status_message_excerpt=_build_status_message_excerpt(account.status_message),
                 signal_labels=[_SIGNAL_LABELS[key] for key in signal_keys],
+                consecutive_signal_snapshots=consecutive_signal_snapshots,
+                signal_started_at=signal_started_at,
             )
         )
 
     samples.sort(
         key=lambda item: (
+            -item.consecutive_signal_snapshots,
             -len(item.signal_labels),
             -(item.current_weekly_used_percent or Decimal("-1")),
             -(item.current_short_used_percent or Decimal("-1")),
@@ -442,9 +463,66 @@ def _build_current_signal_baseline(
         signal_accounts=len(samples),
         signal_breakdown=_build_signal_breakdown(signal_counter),
         signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
+        signal_streak_breakdown=_build_signal_streak_breakdown(streak_counter),
         top_status_messages=_build_top_status_messages(status_counter),
         recent_samples=samples[:10],
     )
+
+
+def _load_success_snapshots_by_account_id(
+    db: Session,
+    *,
+    account_ids: list[int],
+) -> dict[int, list[AccountSnapshot]]:
+    if not account_ids:
+        return {}
+
+    snapshots = list(
+        db.scalars(
+            select(AccountSnapshot)
+            .where(
+                AccountSnapshot.account_id.in_(account_ids),
+                AccountSnapshot.snapshot_status == "success",
+            )
+            .order_by(
+                AccountSnapshot.account_id.asc(),
+                AccountSnapshot.checked_at.desc(),
+                AccountSnapshot.id.desc(),
+            )
+        )
+    )
+
+    grouped: dict[int, list[AccountSnapshot]] = {}
+    for snapshot in snapshots:
+        grouped.setdefault(snapshot.account_id, []).append(snapshot)
+    return grouped
+
+
+def _build_current_signal_streak(
+    *,
+    account: Account,
+    snapshots: list[AccountSnapshot],
+) -> tuple[int, datetime | None]:
+    if not snapshots:
+        return 1, _ensure_utc(account.current_last_checked_at) if account.current_last_checked_at else None
+
+    latest_checked_at = _ensure_utc(account.current_last_checked_at) if account.current_last_checked_at else None
+    streak_count = 0
+    signal_started_at: datetime | None = None
+
+    for snapshot in snapshots:
+        checked_at = _ensure_utc(snapshot.checked_at)
+        if latest_checked_at is not None and checked_at > latest_checked_at:
+            continue
+        if not _extract_snapshot_signal_keys(snapshot):
+            break
+        streak_count += 1
+        signal_started_at = checked_at
+
+    if streak_count > 0:
+        return streak_count, signal_started_at
+
+    return 1, latest_checked_at
 
 
 def _build_percent_band_counts(counter: Counter[str]) -> list[ResearchBucketCount]:
@@ -481,6 +559,15 @@ def _build_signal_pattern_breakdown(counter: Counter[str]) -> list[ResearchBucke
     return sorted(items, key=lambda item: (-item.count, item.label))[:5]
 
 
+def _build_signal_streak_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
+    buckets = [
+        ("1", "仅最新 1 轮", counter.get("1", 0)),
+        ("2_3", "连续 2-3 轮", counter.get("2_3", 0)),
+        ("4_plus", "连续 4 轮以上", counter.get("4_plus", 0)),
+    ]
+    return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in buckets if count > 0]
+
+
 def _build_top_status_messages(counter: Counter[str]) -> list[ResearchBucketCount]:
     items = [
         ResearchBucketCount(key=message, label=message, count=count)
@@ -513,6 +600,25 @@ def _extract_account_signal_keys(account: Account) -> list[str]:
     if account.current_remaining is not None and account.current_remaining <= 0:
         signal_keys.append("remaining_empty")
     if (account.status_message or "").strip():
+        signal_keys.append("status_message_present")
+
+    return signal_keys
+
+
+def _extract_snapshot_signal_keys(snapshot: AccountSnapshot) -> list[str]:
+    signal_keys: list[str] = []
+
+    if _decimal_gte(snapshot.weekly_used_percent, Decimal("90")):
+        signal_keys.append("weekly_ge_90")
+    if _decimal_gte(snapshot.short_used_percent, Decimal("90")):
+        signal_keys.append("short_ge_90")
+    if snapshot.limit_reached is True:
+        signal_keys.append("limit_reached")
+    if snapshot.allowed is False:
+        signal_keys.append("allowed_false")
+    if snapshot.remaining is not None and snapshot.remaining <= 0:
+        signal_keys.append("remaining_empty")
+    if (snapshot.status_message or "").strip():
         signal_keys.append("status_message_present")
 
     return signal_keys
@@ -596,6 +702,14 @@ def _bucket_percent(value: Decimal | None) -> str:
     if value < 90:
         return "75_89"
     return "90_100"
+
+
+def _bucket_signal_streak(value: int) -> str:
+    if value <= 1:
+        return "1"
+    if value <= 3:
+        return "2_3"
+    return "4_plus"
 
 
 def _build_combo_label(*, provider: str | None, account_type: str | None) -> str:

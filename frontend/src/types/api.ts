@@ -106,6 +106,8 @@ export interface ResearchCurrentSignalSample {
   current_allowed: boolean | null;
   status_message_excerpt: string | null;
   signal_labels: string[];
+  consecutive_signal_snapshots: number;
+  signal_started_at: string | null;
 }
 
 export interface ResearchCurrentSignalBaseline {
@@ -113,6 +115,7 @@ export interface ResearchCurrentSignalBaseline {
   signal_accounts: number;
   signal_breakdown: ResearchBucketCount[];
   signal_pattern_breakdown: ResearchBucketCount[];
+  signal_streak_breakdown: ResearchBucketCount[];
   top_status_messages: ResearchBucketCount[];
   recent_samples: ResearchCurrentSignalSample[];
 }

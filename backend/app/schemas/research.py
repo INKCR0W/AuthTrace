@@ -92,6 +92,8 @@ class ResearchCurrentSignalSample(BaseModel):
     current_allowed: bool | None = None
     status_message_excerpt: str | None = None
     signal_labels: list[str] = Field(default_factory=list)
+    consecutive_signal_snapshots: int
+    signal_started_at: datetime | None = None
 
 
 class ResearchCurrentSignalBaseline(BaseModel):
@@ -99,6 +101,7 @@ class ResearchCurrentSignalBaseline(BaseModel):
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
     recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)
 

@@ -346,6 +346,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "signal_accounts": 0,
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
+        "signal_streak_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
     }
@@ -623,6 +624,7 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "signal_accounts": 0,
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
+        "signal_streak_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
     }
@@ -724,6 +726,77 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             last_seen_at=base_time,
         )
         db.add_all([observed_signal, observed_normal, ignored_disabled, ignored_401])
+        db.flush()
+        db.add_all(
+            [
+                AccountSnapshot(
+                    account_id=observed_signal.id,
+                    scan_job_id=1,
+                    checked_at=base_time,
+                    created_at=base_time,
+                    snapshot_status="success",
+                    probe_status_code=200,
+                    is_401=False,
+                    weekly_used_percent=Decimal("97.00"),
+                    remaining=Decimal("3.00"),
+                    limit_reached=True,
+                    allowed=False,
+                    status_message='{"error":{"type":"usage_limit_reached","message":"usage limit reached on current window"}}',
+                ),
+                AccountSnapshot(
+                    account_id=observed_signal.id,
+                    scan_job_id=2,
+                    checked_at=base_time - timedelta(hours=1),
+                    created_at=base_time - timedelta(hours=1),
+                    snapshot_status="success",
+                    probe_status_code=200,
+                    is_401=False,
+                    weekly_used_percent=Decimal("96.00"),
+                    remaining=Decimal("4.00"),
+                    limit_reached=True,
+                    allowed=False,
+                    status_message="usage limit reached on current window",
+                ),
+                AccountSnapshot(
+                    account_id=observed_signal.id,
+                    scan_job_id=3,
+                    checked_at=base_time - timedelta(hours=2),
+                    created_at=base_time - timedelta(hours=2),
+                    snapshot_status="success",
+                    probe_status_code=200,
+                    is_401=False,
+                    weekly_used_percent=Decimal("95.00"),
+                    remaining=Decimal("5.00"),
+                    limit_reached=True,
+                    allowed=False,
+                    status_message="usage limit reached on current window",
+                ),
+                AccountSnapshot(
+                    account_id=observed_signal.id,
+                    scan_job_id=4,
+                    checked_at=base_time - timedelta(hours=3),
+                    created_at=base_time - timedelta(hours=3),
+                    snapshot_status="success",
+                    probe_status_code=200,
+                    is_401=False,
+                    weekly_used_percent=Decimal("80.00"),
+                    remaining=Decimal("20.00"),
+                    limit_reached=False,
+                    allowed=True,
+                    status_message=None,
+                ),
+                AccountSnapshot(
+                    account_id=observed_signal.id,
+                    scan_job_id=5,
+                    checked_at=base_time + timedelta(minutes=30),
+                    created_at=base_time + timedelta(minutes=30),
+                    snapshot_status="failed",
+                    probe_status_code=None,
+                    is_401=False,
+                    error_message="network timeout",
+                ),
+            ]
+        )
         db.commit()
 
     response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
@@ -745,6 +818,13 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
         {
             "key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "label": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "count": 1,
+        }
+    ]
+    assert baseline["signal_streak_breakdown"] == [
+        {
+            "key": "2_3",
+            "label": "连续 2-3 轮",
             "count": 1,
         }
     ]
@@ -774,6 +854,8 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
                 "allowed=false",
                 "存在 status_message",
             ],
+            "consecutive_signal_snapshots": 3,
+            "signal_started_at": "2026-05-02T10:00:00Z",
         }
     ]
 
@@ -893,6 +975,13 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "count": 1,
         }
     ]
+    assert baseline["signal_streak_breakdown"] == [
+        {
+            "key": "1",
+            "label": "仅最新 1 轮",
+            "count": 1,
+        }
+    ]
     assert baseline["top_status_messages"] == [
         {
             "key": "busy window",
@@ -919,6 +1008,8 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
                 "allowed=false",
                 "存在 status_message",
             ],
+            "consecutive_signal_snapshots": 1,
+            "signal_started_at": "2026-05-02T12:00:00Z",
         }
     ]
 
