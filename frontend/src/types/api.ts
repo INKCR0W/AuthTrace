@@ -50,6 +50,57 @@ export interface DashboardOverviewResponse {
   latest_scan_job: LatestScanJobSummary | null;
 }
 
+export interface ResearchOverviewSummary {
+  active_accounts: number;
+  current_401_accounts: number;
+  current_401_rate: number;
+  became_401_events: number;
+  affected_accounts: number;
+  affected_provider_groups: number;
+  sampled_previous_snapshots: number;
+}
+
+export interface ResearchCombinationBreakdownItem {
+  label: string;
+  provider: string | null;
+  account_type: string | null;
+  total_accounts: number;
+  current_401_accounts: number;
+  current_401_rate: number;
+  became_401_events: number;
+  affected_accounts: number;
+  last_became_401_at: string | null;
+}
+
+export interface ResearchHourlyDistributionPoint {
+  hour_of_day: number;
+  label: string;
+  became_401_count: number;
+}
+
+export interface ResearchBucketCount {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface ResearchPre401Insights {
+  sampled_events: number;
+  events_with_previous_snapshot: number;
+  weekly_used_percent_bands: ResearchBucketCount[];
+  short_used_percent_bands: ResearchBucketCount[];
+  signal_breakdown: ResearchBucketCount[];
+  top_status_messages: ResearchBucketCount[];
+}
+
+export interface ResearchOverviewResponse {
+  window_days: number;
+  summary: ResearchOverviewSummary;
+  provider_account_type_breakdown: ResearchCombinationBreakdownItem[];
+  event_hour_distribution: ResearchHourlyDistributionPoint[];
+  pre_401_insights: ResearchPre401Insights;
+}
+
 export interface DefaultManagementSourceResponse {
   source_id: number | null;
   source_key: string;

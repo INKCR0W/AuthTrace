@@ -7,6 +7,7 @@ from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.events import router as events_router
 from app.api.routes.health import router as health_router
 from app.api.routes.management_sources import router as management_sources_router
+from app.api.routes.research import router as research_router
 from app.api.routes.scan_jobs import router as scan_jobs_router
 from app.api.routes.sync import router as sync_router
 from app.core.config import settings
@@ -20,6 +21,7 @@ api_v1_router.include_router(health_router, prefix="/health", tags=["health"])
 api_v1_router.include_router(accounts_router, prefix="/accounts", tags=["accounts"])
 api_v1_router.include_router(events_router, prefix="/events", tags=["events"])
 api_v1_router.include_router(scan_jobs_router, prefix="/scan-jobs", tags=["scan-jobs"])
+api_v1_router.include_router(research_router, prefix="/research", tags=["research"])
 api_v1_router.include_router(
     management_sources_router,
     prefix="/management-sources",

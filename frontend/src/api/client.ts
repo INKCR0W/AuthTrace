@@ -6,6 +6,7 @@ import type {
   DefaultManagementSourceResponse,
   EventDetailResponse,
   EventListResponse,
+  ResearchOverviewResponse,
   ScanJobDetailResponse,
   ScanJobListResponse,
 } from "@/types/api";
@@ -109,6 +110,10 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
 export function getDashboardOverview() {
   return requestJson<DashboardOverviewResponse>("api/v1/dashboard/overview");
+}
+
+export function getResearchOverview(query?: Record<string, QueryValue>) {
+  return requestJson<ResearchOverviewResponse>("api/v1/research/overview", { query });
 }
 
 export function getAccounts(query?: Record<string, QueryValue>) {
