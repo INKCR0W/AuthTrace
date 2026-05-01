@@ -968,6 +968,10 @@ def test_account_and_event_query_apis_return_timeline_data() -> None:
     assert detail_payload["account"]["id"] == account_payload["id"]
     assert len(detail_payload["recent_snapshots"]) == 2
     assert detail_payload["recent_snapshots"][0]["probe_status_code"] == 401
+    assert detail_payload["recent_snapshots"][0]["account_id"] == account_payload["id"]
+    assert detail_payload["recent_snapshots"][0]["scan_job_id"] == second_response.json()["scan_job_id"]
+    assert detail_payload["recent_snapshots"][0]["raw_usage_json"] == {"detail": "unauthorized"}
+    assert detail_payload["recent_snapshots"][1]["raw_usage_json"]["rate_limit"]["individual_window"]["used_percent"] == 70
     assert len(detail_payload["recent_events"]) == 1
     assert detail_payload["recent_events"][0]["event_type"] == "became_401"
     assert detail_payload["provider_cohort"]["total_accounts"] == 1
@@ -1853,6 +1857,8 @@ def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
                         is_401=False,
                         invalid_quota=False,
                         remaining=Decimal("21.50"),
+                        raw_auth_file_json={"disabled": False, "provider": "openai"},
+                        raw_usage_json={"detail": "healthy"},
                 ),
                     AccountSnapshot(
                         account_id=account_401.id,
@@ -1863,6 +1869,8 @@ def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
                         probe_status_code=401,
                         is_401=True,
                         invalid_quota=False,
+                        raw_auth_file_json={"disabled": False, "provider": "openai"},
+                        raw_usage_json={"detail": "unauthorized"},
                         error_message=None,
                 ),
                     AccountSnapshot(
@@ -1875,9 +1883,11 @@ def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
                         is_401=False,
                         invalid_quota=True,
                         weekly_used_percent=Decimal("96.00"),
-                    remaining=Decimal("0"),
-                    error_message="usage body 不是有效 JSON 对象",
-                    status_message="quota_exceeded",
+                        remaining=Decimal("0"),
+                        raw_auth_file_json={"disabled": False, "provider": "azure"},
+                        raw_usage_json={"detail": "quota", "remaining": 0},
+                        error_message="usage body 不是有效 JSON 对象",
+                        status_message="quota_exceeded",
                 ),
                     AccountSnapshot(
                         account_id=account_failed.id,
@@ -1888,6 +1898,7 @@ def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
                         probe_status_code=None,
                         is_401=False,
                         invalid_quota=False,
+                        raw_auth_file_json={"disabled": True, "provider": "azure"},
                         error_message="probe timeout",
                 ),
             ]
@@ -1914,12 +1925,16 @@ def test_scan_job_detail_api_returns_failure_and_risk_samples() -> None:
     ]
     assert payload["recent_failure_samples"][0]["error_message"] == "probe timeout"
     assert payload["recent_failure_samples"][0]["account"]["disabled"] is True
+    assert payload["recent_failure_samples"][0]["raw_auth_file_json"] == {"disabled": True, "provider": "azure"}
+    assert payload["recent_failure_samples"][1]["raw_usage_json"] == {"detail": "quota", "remaining": 0}
 
     assert [item["account"]["auth_index"] for item in payload["recent_401_samples"]] == ["auth-401"]
     assert payload["recent_401_samples"][0]["probe_status_code"] == 401
+    assert payload["recent_401_samples"][0]["raw_usage_json"] == {"detail": "unauthorized"}
 
     assert [item["account"]["auth_index"] for item in payload["recent_quota_samples"]] == ["auth-quota"]
     assert payload["recent_quota_samples"][0]["weekly_used_percent"] == "96.00"
     assert payload["recent_quota_samples"][0]["status_message"] == "quota_exceeded"
+    assert payload["recent_quota_samples"][0]["account_id"] == 3
 
     app.dependency_overrides.clear()

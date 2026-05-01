@@ -1,3 +1,5 @@
+export type JsonObject = Record<string, unknown>;
+
 export interface LatestScanJobSummary {
   id: number;
   trigger_mode: string;
@@ -116,16 +118,27 @@ export interface ScanJobAccountRef {
 
 export interface ScanJobSnapshotSample {
   id: number;
+  account_id: number;
+  scan_job_id: number;
   checked_at: string;
   snapshot_status: string;
   probe_status_code: number | null;
   is_401: boolean;
+  quota_status_code: number | null;
   invalid_quota: boolean;
+  quota_source: string | null;
   weekly_used_percent: string | null;
+  weekly_reset_at: string | null;
   short_used_percent: string | null;
+  short_reset_at: string | null;
   remaining: string | null;
+  limit_reached: boolean | null;
+  allowed: boolean | null;
   status_message: string | null;
+  raw_auth_file_json: JsonObject | null;
+  raw_usage_json: JsonObject | null;
   error_message: string | null;
+  created_at: string;
   account: ScanJobAccountRef;
 }
 
@@ -187,6 +200,8 @@ export interface AccountSnapshotSummary {
   limit_reached: boolean | null;
   allowed: boolean | null;
   status_message: string | null;
+  raw_auth_file_json: JsonObject | null;
+  raw_usage_json: JsonObject | null;
   error_message: string | null;
   created_at: string;
 }

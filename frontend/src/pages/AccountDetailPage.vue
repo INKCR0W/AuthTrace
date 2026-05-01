@@ -5,6 +5,7 @@ import { useRoute } from "vue-router";
 import { getAccountDetail } from "@/api/client";
 import AccountUsageChart from "@/components/AccountUsageChart.vue";
 import CohortRiskTrendChart from "@/components/CohortRiskTrendChart.vue";
+import JsonPayloadViewer from "@/components/JsonPayloadViewer.vue";
 import StatusPill from "@/components/StatusPill.vue";
 import { formatCount, formatDateTime, formatPercent, formatRemaining, formatStatusCode } from "@/lib/format";
 import type {
@@ -453,6 +454,7 @@ function signalTone(signal: AccountRiskSignal) {
                   <th>短周期</th>
                   <th>剩余</th>
                   <th>快照状态</th>
+                  <th>联调上下文</th>
                 </tr>
               </thead>
               <tbody>
@@ -464,6 +466,13 @@ function signalTone(signal: AccountRiskSignal) {
                   <td>{{ formatPercent(snapshot.short_used_percent) }}</td>
                   <td>{{ formatRemaining(snapshot.remaining) }}</td>
                   <td>{{ snapshot.snapshot_status }}</td>
+                  <td>
+                    <p class="table-inline-note">{{ snapshot.error_message || snapshot.status_message || "无额外提示" }}</p>
+                    <div class="json-viewer-stack">
+                      <JsonPayloadViewer title="auth-file 原始 JSON" :payload="snapshot.raw_auth_file_json" />
+                      <JsonPayloadViewer title="usage 原始 JSON" :payload="snapshot.raw_usage_json" />
+                    </div>
+                  </td>
                 </tr>
               </tbody>
             </table>

@@ -8,6 +8,7 @@ import {
   getScanJobs,
   triggerAuthFileSync,
 } from "@/api/client";
+import JsonPayloadViewer from "@/components/JsonPayloadViewer.vue";
 import StatusPill from "@/components/StatusPill.vue";
 import { formatCount, formatDateTime, formatDurationMs, formatPercent } from "@/lib/format";
 import type {
@@ -535,6 +536,10 @@ onMounted(() => {
                       </div>
                       <p class="subtle-line">{{ quotaSummary(sample) }}</p>
                       <p>{{ sample.error_message || sample.status_message || "无额外错误文案" }}</p>
+                      <div class="json-viewer-stack">
+                        <JsonPayloadViewer title="auth-file 原始 JSON" :payload="sample.raw_auth_file_json" />
+                        <JsonPayloadViewer title="usage 原始 JSON" :payload="sample.raw_usage_json" />
+                      </div>
                     </article>
                   </div>
                   <p v-else class="feedback">这一轮没有失败或部分失败快照。</p>
@@ -565,6 +570,10 @@ onMounted(() => {
                             <StatusPill tone="danger" text="401" />
                           </div>
                           <p>{{ sample.account.provider || "未标注 provider" }} · {{ sample.account.account_type || "未标注类型" }}</p>
+                          <div class="json-viewer-stack">
+                            <JsonPayloadViewer title="auth-file 原始 JSON" :payload="sample.raw_auth_file_json" />
+                            <JsonPayloadViewer title="usage 原始 JSON" :payload="sample.raw_usage_json" />
+                          </div>
                         </article>
                       </div>
                       <p v-else class="feedback">这一轮没有 401 样本。</p>
@@ -587,6 +596,10 @@ onMounted(() => {
                           </div>
                           <p class="subtle-line">{{ quotaSummary(sample) }}</p>
                           <p>{{ sample.status_message || sample.error_message || "无额外提示" }}</p>
+                          <div class="json-viewer-stack">
+                            <JsonPayloadViewer title="auth-file 原始 JSON" :payload="sample.raw_auth_file_json" />
+                            <JsonPayloadViewer title="usage 原始 JSON" :payload="sample.raw_usage_json" />
+                          </div>
                         </article>
                       </div>
                       <p v-else class="feedback">当前口径下不会再把非 401 样本标记为异常。</p>

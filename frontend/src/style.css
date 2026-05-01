@@ -448,6 +448,10 @@ select {
   overflow-x: auto;
 }
 
+.table-inline-note {
+  margin: 0 0 8px;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -543,6 +547,56 @@ select {
 .timeline-list {
   display: grid;
   gap: 14px;
+}
+
+.json-viewer-stack {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.json-viewer {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.46);
+  overflow: hidden;
+}
+
+.json-viewer summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.json-viewer summary::-webkit-details-marker {
+  display: none;
+}
+
+.json-viewer[open] summary {
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.json-code,
+.json-empty {
+  margin: 0;
+  padding: 12px;
+}
+
+.json-code {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #2d2723;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.json-empty {
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .scan-job-detail-block,
