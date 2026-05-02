@@ -3,12 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.serializers import serialize_latest_scan_job_summary
 from app.api.deps import get_db_session
 from app.repositories.dashboard import get_overview_stats
 from app.schemas.dashboard import (
     DashboardOverviewResponse,
     DimensionBreakdownItem,
-    LatestScanJobSummary,
     OverviewTrendPoint,
 )
 
@@ -46,7 +46,7 @@ def get_dashboard_overview(
             for item in overview.account_type_breakdown
         ],
         latest_scan_job=(
-            LatestScanJobSummary.model_validate(overview.latest_scan_job)
+            serialize_latest_scan_job_summary(overview.latest_scan_job)
             if overview.latest_scan_job is not None
             else None
         ),

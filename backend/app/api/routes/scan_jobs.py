@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
+from app.api.serializers import serialize_scan_job_snapshot_sample, serialize_scan_job_summary
 from app.repositories.scan_job import (
     ScanJobListFilters,
     ScanJobSnapshotSampleRow,
@@ -19,7 +20,6 @@ from app.schemas.scan_job import (
     ScanJobListResponse,
     ScanJobSnapshotSample,
     ScanJobSnapshotStats,
-    ScanJobSummary,
 )
 
 
@@ -53,7 +53,7 @@ def get_scan_jobs(
         total=total,
         limit=limit,
         offset=offset,
-        items=[ScanJobSummary.model_validate(item) for item in items],
+        items=[serialize_scan_job_summary(item) for item in items],
     )
 
 
@@ -67,7 +67,7 @@ def get_scan_job_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="扫描任务不存在")
 
     return ScanJobDetailResponse(
-        item=ScanJobSummary.model_validate(detail.scan_job),
+        item=serialize_scan_job_summary(detail.scan_job),
         snapshot_stats=ScanJobSnapshotStats.model_validate(detail.snapshot_stats),
         diagnostic_summary=ScanJobDiagnosticSummary.model_validate(detail.diagnostic_summary),
         recent_failure_samples=[_serialize_snapshot_sample(item) for item in detail.recent_failure_samples],
@@ -79,7 +79,8 @@ def get_scan_job_detail(
 def _serialize_snapshot_sample(item: ScanJobSnapshotSampleRow) -> ScanJobSnapshotSample:
     snapshot = item.snapshot
     account = item.account
-    return ScanJobSnapshotSample(
+    return serialize_scan_job_snapshot_sample(
+        ScanJobSnapshotSample(
         id=snapshot.id,
         account_id=snapshot.account_id,
         scan_job_id=snapshot.scan_job_id,
@@ -110,4 +111,5 @@ def _serialize_snapshot_sample(item: ScanJobSnapshotSampleRow) -> ScanJobSnapsho
             account_type=account.account_type,
             disabled=account.disabled,
         ),
+        )
     )

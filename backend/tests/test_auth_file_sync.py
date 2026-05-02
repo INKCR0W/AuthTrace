@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_app_settings, get_db_session, get_management_client
+from app.api.serializers import LEGACY_BLANK_ERROR_MESSAGE
 from app.core.config import Settings
 from app.main import app
 from app.models.account import Account
@@ -1659,6 +1660,61 @@ def test_dashboard_overview_and_list_filters_support_frontend_queries() -> None:
     app.dependency_overrides.clear()
 
 
+def test_dashboard_overview_normalizes_blank_latest_scan_job_error_message() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            ScanJob(
+                source_id=source.id,
+                trigger_mode="manual",
+                status="failed",
+                scan_started_at=datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc),
+                scan_finished_at=datetime(2026, 5, 2, 12, 1, tzinfo=timezone.utc),
+                total_accounts=3,
+                eligible_accounts=3,
+                scanned_accounts=3,
+                success_accounts=0,
+                failed_accounts=3,
+                new_401_events=0,
+                new_quota_events=0,
+                duration_ms=60000,
+                error_message=" ",
+            )
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/dashboard/overview"))
+    assert response.status_code == 200
+    assert response.json()["latest_scan_job"]["error_message"] == LEGACY_BLANK_ERROR_MESSAGE
+
+    app.dependency_overrides.clear()
+
+
 def test_scan_job_query_apis_return_paginated_runs_and_error_details() -> None:
     session_factory = _create_session_factory()
 
@@ -1800,6 +1856,101 @@ def test_scan_job_query_apis_return_paginated_runs_and_error_details() -> None:
 
     missing_response = asyncio.run(_request("GET", "/api/v1/scan-jobs/999"))
     assert missing_response.status_code == 404
+
+    app.dependency_overrides.clear()
+
+
+def test_scan_job_api_normalizes_blank_legacy_error_messages() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        account = Account(
+            source_id=source.id,
+            auth_index="auth-legacy",
+            name="legacy.json",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_invalid_quota=False,
+            first_seen_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            last_seen_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+        )
+        db.add(account)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="manual",
+            status="failed",
+            scan_started_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            scan_finished_at=datetime(2026, 5, 2, 10, 1, tzinfo=timezone.utc),
+            total_accounts=1,
+            eligible_accounts=1,
+            scanned_accounts=1,
+            success_accounts=0,
+            failed_accounts=1,
+            new_401_events=0,
+            new_quota_events=0,
+            duration_ms=60000,
+            error_message="   ",
+        )
+        db.add(scan_job)
+        db.flush()
+        scan_job_id = scan_job.id
+
+        db.add(
+            AccountSnapshot(
+                account_id=account.id,
+                scan_job_id=scan_job_id,
+                checked_at=datetime(2026, 5, 2, 10, 0, 30, tzinfo=timezone.utc),
+                created_at=datetime(2026, 5, 2, 10, 0, 30, tzinfo=timezone.utc),
+                snapshot_status="failed",
+                probe_status_code=None,
+                is_401=False,
+                invalid_quota=False,
+                raw_auth_file_json={"disabled": False},
+                error_message="   ",
+            )
+        )
+        db.commit()
+
+    list_response = asyncio.run(_request("GET", "/api/v1/scan-jobs?limit=5"))
+    assert list_response.status_code == 200
+    assert list_response.json()["items"][0]["error_message"] == LEGACY_BLANK_ERROR_MESSAGE
+
+    detail_response = asyncio.run(_request("GET", f"/api/v1/scan-jobs/{scan_job_id}"))
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["item"]["error_message"] == LEGACY_BLANK_ERROR_MESSAGE
+    assert detail_payload["recent_failure_samples"][0]["error_message"] == LEGACY_BLANK_ERROR_MESSAGE
 
     app.dependency_overrides.clear()
 
