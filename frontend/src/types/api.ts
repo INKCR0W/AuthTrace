@@ -144,6 +144,8 @@ export interface ResearchCurrentSignalGroupBreakdownItem {
   signal_accounts: number;
   signal_rate: number;
   multi_round_signal_accounts: number;
+  historical_like_accounts: number;
+  historical_like_rate: number;
   top_signal_pattern: string | null;
 }
 

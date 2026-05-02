@@ -126,6 +126,13 @@ const leadingSignalPatternComparison = computed(() => {
   }
   return item;
 });
+const leadingHistoricalLikeGroup = computed(() => {
+  const item = overview.value?.current_signal_baseline.current_signal_group_breakdown[0] ?? null;
+  if (!item || item.historical_like_accounts <= 0) {
+    return null;
+  }
+  return item;
+});
 const dominantCurrentSignalPatternSummary = computed(() => {
   const baseline = overview.value?.current_signal_baseline;
   const dominantPattern = dominantCurrentSignalPattern.value;
@@ -171,6 +178,14 @@ const leadingSignalPatternComparisonSummary = computed(() => {
   }
 
   return `组合模式“${item.label}”在历史 401 前的命中率比当前基线高 ${formatPercent(item.rate_gap)}，更适合作为优先回放的前序样本画像。`;
+});
+const leadingHistoricalLikeGroupSummary = computed(() => {
+  const item = leadingHistoricalLikeGroup.value;
+  if (!item) {
+    return "";
+  }
+
+  return `${item.label} 当前有 ${formatCount(item.historical_like_accounts)} 个样本与历史 401 前模式高度贴近，占该组研究信号账号的 ${formatPercent(item.historical_like_rate)}。`;
 });
 
 async function loadOverview() {
@@ -707,6 +722,13 @@ onMounted(() => {
           </div>
         </div>
 
+        <p v-if="leadingHistoricalLikeGroupSummary" class="subtle-line">
+          {{ leadingHistoricalLikeGroupSummary }}
+        </p>
+        <p class="subtle-line">
+          “历史高贴近”只统计与历史 `401` 前模式“完全同模式”或“被历史模式覆盖”的当前样本，可优先作为下一批回放对象。
+        </p>
+
         <div v-if="overview.current_signal_baseline.current_signal_group_breakdown.length" class="table-wrap">
           <table class="data-table compact">
             <thead>
@@ -716,6 +738,7 @@ onMounted(() => {
                 <th>信号账号</th>
                 <th>信号率</th>
                 <th>连续 2 轮+</th>
+                <th>历史高贴近</th>
                 <th>主导模式</th>
               </tr>
             </thead>
@@ -734,6 +757,10 @@ onMounted(() => {
                 <td>{{ formatCount(item.signal_accounts) }}</td>
                 <td>{{ formatPercent(item.signal_rate) }}</td>
                 <td>{{ formatCount(item.multi_round_signal_accounts) }}</td>
+                <td>
+                  {{ formatCount(item.historical_like_accounts) }}
+                  <p class="subtle-line">{{ formatPercent(item.historical_like_rate) }}</p>
+                </td>
                 <td>{{ item.top_signal_pattern ?? "未归纳" }}</td>
               </tr>
             </tbody>

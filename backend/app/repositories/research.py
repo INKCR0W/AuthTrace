@@ -137,6 +137,8 @@ class ResearchCurrentSignalGroupBreakdownItem:
     signal_accounts: int
     signal_rate: float
     multi_round_signal_accounts: int
+    historical_like_accounts: int
+    historical_like_rate: float
     top_signal_pattern: str | None
 
 
@@ -640,6 +642,7 @@ def _build_current_signal_baseline(
     status_counter = Counter[str]()
     signal_group_counter = Counter[tuple[str | None, str | None]]()
     multi_round_group_counter = Counter[tuple[str | None, str | None]]()
+    historical_like_group_counter = Counter[tuple[str | None, str | None]]()
     group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]] = {}
     samples: list[ResearchCurrentSignalSample] = []
     signal_accounts: list[tuple[Account, list[str], str]] = []
@@ -683,6 +686,8 @@ def _build_current_signal_baseline(
         historical_match_counter[historical_match.level] += 1
         if consecutive_signal_snapshots >= 2:
             multi_round_group_counter[group_key] += 1
+        if historical_match.level in _HISTORICAL_LIKE_LEVELS:
+            historical_like_group_counter[group_key] += 1
         status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
         if status_message_excerpt:
             status_counter[status_message_excerpt] += 1
@@ -737,6 +742,7 @@ def _build_current_signal_baseline(
             observed_group_counter=observed_group_counter,
             signal_group_counter=signal_group_counter,
             multi_round_group_counter=multi_round_group_counter,
+            historical_like_group_counter=historical_like_group_counter,
             group_pattern_counter=group_pattern_counter,
         ),
         top_status_messages=_build_top_status_messages(status_counter),
@@ -870,6 +876,7 @@ def _build_current_signal_group_breakdown(
     observed_group_counter: Counter[tuple[str | None, str | None]],
     signal_group_counter: Counter[tuple[str | None, str | None]],
     multi_round_group_counter: Counter[tuple[str | None, str | None]],
+    historical_like_group_counter: Counter[tuple[str | None, str | None]],
     group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]],
 ) -> list[ResearchCurrentSignalGroupBreakdownItem]:
     items: list[ResearchCurrentSignalGroupBreakdownItem] = []
@@ -890,6 +897,11 @@ def _build_current_signal_group_breakdown(
                     denominator=observed_accounts,
                 ),
                 multi_round_signal_accounts=multi_round_group_counter.get(group_key, 0),
+                historical_like_accounts=historical_like_group_counter.get(group_key, 0),
+                historical_like_rate=_to_rate_percent(
+                    numerator=historical_like_group_counter.get(group_key, 0),
+                    denominator=signal_accounts,
+                ),
                 top_signal_pattern=top_pattern,
             )
         )
@@ -897,6 +909,8 @@ def _build_current_signal_group_breakdown(
     return sorted(
         items,
         key=lambda item: (
+            -item.historical_like_accounts,
+            -item.historical_like_rate,
             -item.signal_accounts,
             -item.multi_round_signal_accounts,
             -item.signal_rate,
@@ -952,6 +966,7 @@ _HISTORICAL_MATCH_PRIORITY = {
     "no_overlap": 3,
     "no_history": 4,
 }
+_HISTORICAL_LIKE_LEVELS = frozenset({"exact_pattern", "covered_pattern"})
 
 
 @dataclass(slots=True)

@@ -925,6 +925,8 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "signal_accounts": 1,
             "signal_rate": 50.0,
             "multi_round_signal_accounts": 1,
+            "historical_like_accounts": 0,
+            "historical_like_rate": 0.0,
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
         }
     ]
@@ -1102,6 +1104,8 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "signal_accounts": 1,
             "signal_rate": 100.0,
             "multi_round_signal_accounts": 0,
+            "historical_like_accounts": 0,
+            "historical_like_rate": 0.0,
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
         }
     ]
@@ -1318,6 +1322,8 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "signal_accounts": 1,
             "signal_rate": 100.0,
             "multi_round_signal_accounts": 1,
+            "historical_like_accounts": 0,
+            "historical_like_rate": 0.0,
             "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
         }
     ]
@@ -1873,6 +1879,20 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
             "count": 1,
         },
     ]
+    assert baseline["current_signal_group_breakdown"] == [
+        {
+            "label": "openai / chatgpt",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "observed_accounts": 4,
+            "signal_accounts": 4,
+            "signal_rate": 100.0,
+            "multi_round_signal_accounts": 0,
+            "historical_like_accounts": 2,
+            "historical_like_rate": 50.0,
+            "top_signal_pattern": "remaining <= 0",
+        }
+    ]
     assert [item["account_name"] for item in baseline["recent_samples"]] == [
         "Current-Exact",
         "Current-Covered",
@@ -2048,8 +2068,167 @@ def test_research_overview_api_stabilizes_group_top_pattern_on_tie() -> None:
             "signal_accounts": 2,
             "signal_rate": 100.0,
             "multi_round_signal_accounts": 0,
+            "historical_like_accounts": 0,
+            "historical_like_rate": 0.0,
             "top_signal_pattern": "allowed=false",
         }
     ]
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_prioritizes_groups_with_more_historical_like_samples() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=1),
+            scan_finished_at=base_time - timedelta(minutes=55),
+            total_accounts=5,
+            eligible_accounts=5,
+            scanned_accounts=5,
+            success_accounts=5,
+            failed_accounts=0,
+            new_401_events=1,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        historical_account = Account(
+            source_id=source.id,
+            auth_index="historical-openai",
+            name="Historical-OpenAI",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time - timedelta(minutes=5),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time - timedelta(minutes=5),
+        )
+        current_openai = Account(
+            source_id=source.id,
+            auth_index="current-openai",
+            name="Current-OpenAI-Exact",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("95.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="still hot",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        current_azure_one = Account(
+            source_id=source.id,
+            auth_index="current-azure-one",
+            name="Current-Azure-One",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_short_used_percent=Decimal("93.00"),
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        current_azure_two = Account(
+            source_id=source.id,
+            auth_index="current-azure-two",
+            name="Current-Azure-Two",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_remaining=Decimal("0.00"),
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        db.add_all([historical_account, current_openai, current_azure_one, current_azure_two])
+        db.flush()
+
+        historical_snapshot = AccountSnapshot(
+            account_id=historical_account.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=15),
+            created_at=base_time - timedelta(minutes=15),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="history hot",
+        )
+        db.add(historical_snapshot)
+        db.flush()
+
+        db.add(
+            AccountEvent(
+                account_id=historical_account.id,
+                event_type="became_401",
+                event_time=base_time - timedelta(minutes=5),
+                related_snapshot_id=historical_snapshot.id,
+                previous_snapshot_id=historical_snapshot.id,
+                from_status_code=200,
+                to_status_code=401,
+                from_is_401=False,
+                to_is_401=True,
+                from_disabled=False,
+                to_disabled=False,
+                created_at=base_time - timedelta(minutes=5),
+            )
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    group_breakdown = response.json()["current_signal_baseline"]["current_signal_group_breakdown"]
+    assert [item["label"] for item in group_breakdown] == [
+        "openai / chatgpt",
+        "azure / chatgpt",
+    ]
+    assert group_breakdown[0]["historical_like_accounts"] == 1
+    assert group_breakdown[0]["historical_like_rate"] == 100.0
+    assert group_breakdown[1]["historical_like_accounts"] == 0
+    assert group_breakdown[1]["historical_like_rate"] == 0.0
 
     app.dependency_overrides.clear()

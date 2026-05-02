@@ -137,6 +137,8 @@ class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
     signal_accounts: int
     signal_rate: float
     multi_round_signal_accounts: int
+    historical_like_accounts: int
+    historical_like_rate: float
     top_signal_pattern: str | None = None
 
 
