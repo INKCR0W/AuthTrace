@@ -121,6 +121,10 @@ class ResearchCurrentSignalSample(BaseModel):
     signal_labels: list[str] = Field(default_factory=list)
     consecutive_signal_snapshots: int
     signal_started_at: datetime | None = None
+    historical_match_level: str
+    historical_match_label: str
+    historical_match_rate: float
+    historical_best_pattern: str | None = None
 
 
 class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
@@ -142,6 +146,7 @@ class ResearchCurrentSignalBaseline(BaseModel):
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    historical_match_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem] = Field(default_factory=list)
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
     recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)

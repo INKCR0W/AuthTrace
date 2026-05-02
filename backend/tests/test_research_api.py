@@ -399,6 +399,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
         "signal_streak_breakdown": [],
+        "historical_match_breakdown": [],
         "current_signal_group_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
@@ -703,6 +704,7 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
         "signal_streak_breakdown": [],
+        "historical_match_breakdown": [],
         "current_signal_group_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
@@ -907,6 +909,13 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "count": 1,
         }
     ]
+    assert baseline["historical_match_breakdown"] == [
+        {
+            "key": "no_history",
+            "label": "暂无历史 401 样本",
+            "count": 1,
+        }
+    ]
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "openai / chatgpt",
@@ -947,6 +956,10 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             ],
             "consecutive_signal_snapshots": 3,
             "signal_started_at": "2026-05-02T10:00:00Z",
+            "historical_match_level": "no_history",
+            "historical_match_label": "暂无历史 401 样本",
+            "historical_match_rate": 0.0,
+            "historical_best_pattern": None,
         }
     ]
 
@@ -1073,6 +1086,13 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "count": 1,
         }
     ]
+    assert baseline["historical_match_breakdown"] == [
+        {
+            "key": "no_history",
+            "label": "暂无历史 401 样本",
+            "count": 1,
+        }
+    ]
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "azure / chatgpt",
@@ -1113,6 +1133,10 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             ],
             "consecutive_signal_snapshots": 1,
             "signal_started_at": "2026-05-02T12:00:00Z",
+            "historical_match_level": "no_history",
+            "historical_match_label": "暂无历史 401 样本",
+            "historical_match_rate": 0.0,
+            "historical_best_pattern": None,
         }
     ]
 
@@ -1278,6 +1302,13 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "count": 1,
         }
     ]
+    assert baseline["historical_match_breakdown"] == [
+        {
+            "key": "no_history",
+            "label": "暂无历史 401 样本",
+            "count": 1,
+        }
+    ]
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "azure / chatgpt",
@@ -1349,6 +1380,10 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             ],
             "consecutive_signal_snapshots": 2,
             "signal_started_at": "2026-05-02T11:00:00Z",
+            "historical_match_level": "no_history",
+            "historical_match_label": "暂无历史 401 样本",
+            "historical_match_rate": 0.0,
+            "historical_best_pattern": None,
         }
     ]
 
@@ -1602,6 +1637,278 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
         "weekly_ge_90|limit_reached|allowed_false": (0, 0.0, 1, 100.0, -100.0),
     }
     assert payload["current_signal_baseline"]["signal_accounts"] == 1
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_scores_current_samples_against_historical_patterns() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=3),
+            scan_finished_at=base_time - timedelta(hours=3) + timedelta(minutes=4),
+            total_accounts=6,
+            eligible_accounts=6,
+            scanned_accounts=6,
+            success_accounts=6,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        historical_exact = Account(
+            source_id=source.id,
+            auth_index="auth-historical-exact",
+            name="Historical-Exact",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=4),
+            last_seen_at=base_time,
+        )
+        historical_short = Account(
+            source_id=source.id,
+            auth_index="auth-historical-short",
+            name="Historical-Short",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=4),
+            last_seen_at=base_time,
+        )
+        current_exact = Account(
+            source_id=source.id,
+            auth_index="auth-current-exact",
+            name="Current-Exact",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("96.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="same pattern",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        current_covered = Account(
+            source_id=source.id,
+            auth_index="auth-current-covered",
+            name="Current-Covered",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("94.00"),
+            current_allowed=False,
+            current_last_checked_at=base_time - timedelta(minutes=1),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        current_partial = Account(
+            source_id=source.id,
+            auth_index="auth-current-partial",
+            name="Current-Partial",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("92.00"),
+            current_remaining=Decimal("0.00"),
+            current_last_checked_at=base_time - timedelta(minutes=2),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        current_no_overlap = Account(
+            source_id=source.id,
+            auth_index="auth-current-no-overlap",
+            name="Current-No-Overlap",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_remaining=Decimal("0.00"),
+            current_last_checked_at=base_time - timedelta(minutes=3),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        db.add_all(
+            [
+                historical_exact,
+                historical_short,
+                current_exact,
+                current_covered,
+                current_partial,
+                current_no_overlap,
+            ]
+        )
+        db.flush()
+
+        historical_exact_snapshot = AccountSnapshot(
+            account_id=historical_exact.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=10),
+            created_at=base_time - timedelta(minutes=10),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="soft block",
+        )
+        historical_short_snapshot = AccountSnapshot(
+            account_id=historical_short.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=20),
+            created_at=base_time - timedelta(minutes=20),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            short_used_percent=Decimal("91.00"),
+        )
+        db.add_all([historical_exact_snapshot, historical_short_snapshot])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=historical_exact.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=5),
+                    related_snapshot_id=historical_exact_snapshot.id,
+                    previous_snapshot_id=historical_exact_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=5),
+                ),
+                AccountEvent(
+                    account_id=historical_short.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=15),
+                    related_snapshot_id=historical_short_snapshot.id,
+                    previous_snapshot_id=historical_short_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=15),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    payload = response.json()
+    baseline = payload["current_signal_baseline"]
+    assert baseline["historical_match_breakdown"] == [
+        {
+            "key": "exact_pattern",
+            "label": "与历史前序完全同模式",
+            "count": 1,
+        },
+        {
+            "key": "covered_pattern",
+            "label": "被历史前序模式覆盖",
+            "count": 1,
+        },
+        {
+            "key": "partial_overlap",
+            "label": "仅部分信号重合",
+            "count": 1,
+        },
+        {
+            "key": "no_overlap",
+            "label": "与历史前序未重合",
+            "count": 1,
+        },
+    ]
+    assert [item["account_name"] for item in baseline["recent_samples"]] == [
+        "Current-Exact",
+        "Current-Covered",
+        "Current-Partial",
+        "Current-No-Overlap",
+    ]
+    assert baseline["recent_samples"][0]["historical_match_level"] == "exact_pattern"
+    assert baseline["recent_samples"][0]["historical_match_rate"] == 100.0
+    assert (
+        baseline["recent_samples"][0]["historical_best_pattern"]
+        == "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message"
+    )
+    assert baseline["recent_samples"][1]["historical_match_level"] == "covered_pattern"
+    assert baseline["recent_samples"][1]["historical_match_rate"] == 100.0
+    assert baseline["recent_samples"][2]["historical_match_level"] == "partial_overlap"
+    assert baseline["recent_samples"][2]["historical_match_rate"] == 50.0
+    assert baseline["recent_samples"][3] == {
+        "account_id": 6,
+        "account_name": "Current-No-Overlap",
+        "provider": "openai",
+        "account_type": "chatgpt",
+        "current_last_checked_at": "2026-05-02T11:57:00Z",
+        "current_weekly_used_percent": None,
+        "current_short_used_percent": None,
+        "current_remaining": "0.00",
+        "current_limit_reached": None,
+        "current_allowed": None,
+        "status_message_excerpt": None,
+        "signal_labels": ["remaining <= 0"],
+        "consecutive_signal_snapshots": 1,
+        "signal_started_at": "2026-05-02T11:57:00Z",
+        "historical_match_level": "no_overlap",
+        "historical_match_label": "与历史前序未重合",
+        "historical_match_rate": 0.0,
+        "historical_best_pattern": None,
+    }
 
     app.dependency_overrides.clear()
 

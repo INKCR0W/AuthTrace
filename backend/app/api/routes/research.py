@@ -118,6 +118,10 @@ def get_research_overview_api(
                 ResearchBucketCount.model_validate(item)
                 for item in overview.current_signal_baseline.signal_streak_breakdown
             ],
+            historical_match_breakdown=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.current_signal_baseline.historical_match_breakdown
+            ],
             current_signal_group_breakdown=[
                 ResearchCurrentSignalGroupBreakdownItem.model_validate(item)
                 for item in overview.current_signal_baseline.current_signal_group_breakdown

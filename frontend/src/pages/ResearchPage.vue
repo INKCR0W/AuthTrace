@@ -136,6 +136,16 @@ const dominantCurrentSignalPatternSummary = computed(() => {
 
   return `当前最常见的信号组合覆盖 ${formatCount(dominantPattern.count)} / ${formatCount(baseline.signal_accounts)} 个样本：${dominantPattern.label}`;
 });
+const leadingHistoricalMatchSummary = computed(() => {
+  const baseline = overview.value?.current_signal_baseline;
+  const item = baseline?.historical_match_breakdown[0] ?? null;
+
+  if (!baseline || !item || baseline.signal_accounts === 0) {
+    return "";
+  }
+
+  return `${item.label}的当前样本有 ${formatCount(item.count)} / ${formatCount(baseline.signal_accounts)} 个，可优先回放这些仍为非 401 的账号。`;
+});
 const dominantPre401SignalPatternSummary = computed(() => {
   const insights = overview.value?.pre_401_insights;
   const dominantPattern = dominantPre401SignalPattern.value;
@@ -241,6 +251,15 @@ function currentSignalPersistenceSummary(item: ResearchCurrentSignalSample) {
   }
 
   return `${streakLabel}，起于 ${formatDateTime(item.signal_started_at)}`;
+}
+
+function currentSignalHistoricalMatchSummary(item: ResearchCurrentSignalSample) {
+  const coverage = `${item.historical_match_label}（覆盖率 ${formatPercent(item.historical_match_rate)}）`;
+  if (!item.historical_best_pattern) {
+    return coverage;
+  }
+
+  return `${coverage}，最接近历史模式：${item.historical_best_pattern}`;
 }
 
 onMounted(() => {
@@ -445,6 +464,9 @@ onMounted(() => {
           <p v-if="dominantCurrentSignalPatternSummary" class="subtle-line">
             {{ dominantCurrentSignalPatternSummary }}
           </p>
+          <p v-if="leadingHistoricalMatchSummary" class="subtle-line">
+            {{ leadingHistoricalMatchSummary }}
+          </p>
 
           <div v-if="overview.current_signal_baseline.signal_breakdown.length" class="signal-chip-grid">
             <div
@@ -462,6 +484,17 @@ onMounted(() => {
             <p
               v-for="item in overview.current_signal_baseline.signal_streak_breakdown"
               :key="`streak-${item.key}`"
+              class="observation-item"
+            >
+              {{ item.label }} · {{ formatCount(item.count) }} 个账号
+            </p>
+          </div>
+
+          <div v-if="overview.current_signal_baseline.historical_match_breakdown.length" class="observation-list">
+            <p class="subtle-label">与历史 401 前样本的贴近程度</p>
+            <p
+              v-for="item in overview.current_signal_baseline.historical_match_breakdown"
+              :key="`historical-match-${item.key}`"
               class="observation-item"
             >
               {{ item.label }} · {{ formatCount(item.count) }} 个账号
@@ -803,6 +836,7 @@ onMounted(() => {
               <div>
                 <p class="subtle-label">已观测信号</p>
                 <p class="subtle-line">{{ currentSignalPersistenceSummary(sample) }}</p>
+                <p class="subtle-line">{{ currentSignalHistoricalMatchSummary(sample) }}</p>
                 <div class="signal-chip-grid">
                   <div
                     v-for="label in sample.signal_labels"

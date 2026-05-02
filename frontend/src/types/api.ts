@@ -130,6 +130,10 @@ export interface ResearchCurrentSignalSample {
   signal_labels: string[];
   consecutive_signal_snapshots: number;
   signal_started_at: string | null;
+  historical_match_level: string;
+  historical_match_label: string;
+  historical_match_rate: number;
+  historical_best_pattern: string | null;
 }
 
 export interface ResearchCurrentSignalGroupBreakdownItem {
@@ -149,6 +153,7 @@ export interface ResearchCurrentSignalBaseline {
   signal_breakdown: ResearchBucketCount[];
   signal_pattern_breakdown: ResearchBucketCount[];
   signal_streak_breakdown: ResearchBucketCount[];
+  historical_match_breakdown: ResearchBucketCount[];
   current_signal_group_breakdown: ResearchCurrentSignalGroupBreakdownItem[];
   top_status_messages: ResearchBucketCount[];
   recent_samples: ResearchCurrentSignalSample[];

@@ -122,6 +122,10 @@ class ResearchCurrentSignalSample:
     signal_labels: list[str]
     consecutive_signal_snapshots: int
     signal_started_at: datetime | None
+    historical_match_level: str
+    historical_match_label: str
+    historical_match_rate: float
+    historical_best_pattern: str | None
 
 
 @dataclass(slots=True)
@@ -143,6 +147,7 @@ class ResearchCurrentSignalBaseline:
     signal_breakdown: list[ResearchBucketCount]
     signal_pattern_breakdown: list[ResearchBucketCount]
     signal_streak_breakdown: list[ResearchBucketCount]
+    historical_match_breakdown: list[ResearchBucketCount]
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem]
     top_status_messages: list[ResearchBucketCount]
     recent_samples: list[ResearchCurrentSignalSample]
@@ -270,7 +275,11 @@ def get_research_overview(
         ),
         pre_401_insights=_build_pre_401_insights(pre_401_event_rows),
         recent_event_samples=_build_recent_event_samples(pre_401_event_rows),
-        current_signal_baseline=_build_current_signal_baseline(db, filters=filters),
+        current_signal_baseline=_build_current_signal_baseline(
+            db,
+            filters=filters,
+            historical_previous_snapshots=[snapshot for _, _, snapshot in event_rows if snapshot is not None],
+        ),
     )
 
 
@@ -608,6 +617,7 @@ def _build_current_signal_baseline(
     db: Session,
     *,
     filters: ResearchOverviewFilters,
+    historical_previous_snapshots: list[AccountSnapshot],
 ) -> ResearchCurrentSignalBaseline:
     account_scope_conditions = _build_account_scope_conditions(filters)
     account_rows = list(
@@ -626,6 +636,7 @@ def _build_current_signal_baseline(
     signal_counter = Counter[str]()
     pattern_counter = Counter[str]()
     streak_counter = Counter[str]()
+    historical_match_counter = Counter[str]()
     status_counter = Counter[str]()
     signal_group_counter = Counter[tuple[str | None, str | None]]()
     multi_round_group_counter = Counter[tuple[str | None, str | None]]()
@@ -652,6 +663,11 @@ def _build_current_signal_baseline(
         db,
         account_ids=[account.id for account, _, _ in signal_accounts],
     )
+    historical_pattern_keys = [
+        _extract_snapshot_signal_keys(snapshot)
+        for snapshot in historical_previous_snapshots
+    ]
+    historical_pattern_keys = [pattern for pattern in historical_pattern_keys if pattern]
 
     for account, signal_keys, _ in signal_accounts:
         group_key = (account.provider, account.account_type)
@@ -659,7 +675,12 @@ def _build_current_signal_baseline(
             account=account,
             snapshots=snapshots_by_account_id.get(account.id, []),
         )
+        historical_match = _evaluate_historical_signal_match(
+            signal_keys=signal_keys,
+            historical_pattern_keys=historical_pattern_keys,
+        )
         streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
+        historical_match_counter[historical_match.level] += 1
         if consecutive_signal_snapshots >= 2:
             multi_round_group_counter[group_key] += 1
         status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
@@ -685,11 +706,17 @@ def _build_current_signal_baseline(
                 signal_labels=[_SIGNAL_LABELS[key] for key in signal_keys],
                 consecutive_signal_snapshots=consecutive_signal_snapshots,
                 signal_started_at=signal_started_at,
+                historical_match_level=historical_match.level,
+                historical_match_label=_HISTORICAL_MATCH_LABELS[historical_match.level],
+                historical_match_rate=historical_match.rate,
+                historical_best_pattern=historical_match.best_pattern_label,
             )
         )
 
     samples.sort(
         key=lambda item: (
+            _historical_match_sort_key(item.historical_match_level),
+            -item.historical_match_rate,
             -item.consecutive_signal_snapshots,
             -len(item.signal_labels),
             -(item.current_weekly_used_percent or Decimal("-1")),
@@ -705,6 +732,7 @@ def _build_current_signal_baseline(
         signal_breakdown=_build_signal_breakdown(signal_counter),
         signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
         signal_streak_breakdown=_build_signal_streak_breakdown(streak_counter),
+        historical_match_breakdown=_build_historical_match_breakdown(historical_match_counter),
         current_signal_group_breakdown=_build_current_signal_group_breakdown(
             observed_group_counter=observed_group_counter,
             signal_group_counter=signal_group_counter,
@@ -826,6 +854,17 @@ def _build_signal_streak_breakdown(counter: Counter[str]) -> list[ResearchBucket
     return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in buckets if count > 0]
 
 
+def _build_historical_match_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
+    buckets = [
+        ("exact_pattern", _HISTORICAL_MATCH_LABELS["exact_pattern"], counter.get("exact_pattern", 0)),
+        ("covered_pattern", _HISTORICAL_MATCH_LABELS["covered_pattern"], counter.get("covered_pattern", 0)),
+        ("partial_overlap", _HISTORICAL_MATCH_LABELS["partial_overlap"], counter.get("partial_overlap", 0)),
+        ("no_overlap", _HISTORICAL_MATCH_LABELS["no_overlap"], counter.get("no_overlap", 0)),
+        ("no_history", _HISTORICAL_MATCH_LABELS["no_history"], counter.get("no_history", 0)),
+    ]
+    return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in buckets if count > 0]
+
+
 def _build_current_signal_group_breakdown(
     *,
     observed_group_counter: Counter[tuple[str | None, str | None]],
@@ -899,6 +938,27 @@ _SIGNAL_LABELS = {
     "status_message_present": "存在 status_message",
 }
 RESEARCH_SIGNAL_KEYS = tuple(_SIGNAL_LABELS)
+_HISTORICAL_MATCH_LABELS = {
+    "exact_pattern": "与历史前序完全同模式",
+    "covered_pattern": "被历史前序模式覆盖",
+    "partial_overlap": "仅部分信号重合",
+    "no_overlap": "与历史前序未重合",
+    "no_history": "暂无历史 401 样本",
+}
+_HISTORICAL_MATCH_PRIORITY = {
+    "exact_pattern": 0,
+    "covered_pattern": 1,
+    "partial_overlap": 2,
+    "no_overlap": 3,
+    "no_history": 4,
+}
+
+
+@dataclass(slots=True)
+class _HistoricalSignalMatchResult:
+    level: str
+    rate: float
+    best_pattern_label: str | None
 
 
 def _extract_account_signal_keys(account: Account) -> list[str]:
@@ -937,6 +997,81 @@ def _extract_snapshot_signal_keys(snapshot: AccountSnapshot) -> list[str]:
         signal_keys.append("status_message_present")
 
     return signal_keys
+
+
+def _evaluate_historical_signal_match(
+    *,
+    signal_keys: list[str],
+    historical_pattern_keys: list[list[str]],
+) -> _HistoricalSignalMatchResult:
+    if not historical_pattern_keys:
+        return _HistoricalSignalMatchResult(
+            level="no_history",
+            rate=0.0,
+            best_pattern_label=None,
+        )
+
+    current_signal_set = frozenset(signal_keys)
+    if not current_signal_set:
+        return _HistoricalSignalMatchResult(
+            level="no_overlap",
+            rate=0.0,
+            best_pattern_label=None,
+        )
+
+    best_candidate: tuple[int, int, int, int, str, str] | None = None
+    best_candidate_label: str | None = None
+    best_matched_count = 0
+    best_is_exact = False
+    best_is_covered = False
+
+    for historical_keys in historical_pattern_keys:
+        historical_signal_set = frozenset(historical_keys)
+        matched_count = len(current_signal_set & historical_signal_set)
+        if matched_count <= 0:
+            continue
+
+        is_exact = historical_signal_set == current_signal_set
+        is_covered = current_signal_set.issubset(historical_signal_set)
+        pattern_key = "|".join(historical_keys)
+        pattern_label = _build_signal_pattern_label(pattern_key)
+        candidate = (
+            -matched_count,
+            -int(is_exact),
+            -int(is_covered),
+            len(historical_signal_set),
+            pattern_label,
+            pattern_key,
+        )
+        if best_candidate is None or candidate < best_candidate:
+            best_candidate = candidate
+            best_candidate_label = pattern_label
+            best_matched_count = matched_count
+            best_is_exact = is_exact
+            best_is_covered = is_covered
+
+    if best_candidate is None or best_candidate_label is None:
+        return _HistoricalSignalMatchResult(
+            level="no_overlap",
+            rate=0.0,
+            best_pattern_label=None,
+        )
+
+    if best_is_exact:
+        level = "exact_pattern"
+    elif best_is_covered and best_matched_count == len(current_signal_set):
+        level = "covered_pattern"
+    else:
+        level = "partial_overlap"
+
+    return _HistoricalSignalMatchResult(
+        level=level,
+        rate=_to_rate_percent(
+            numerator=best_matched_count,
+            denominator=len(current_signal_set),
+        ),
+        best_pattern_label=best_candidate_label,
+    )
 
 
 def _build_status_message_excerpt(value: str | None, *, limit: int = 120) -> str | None:
@@ -1066,6 +1201,10 @@ def _datetime_to_timestamp(value: datetime | None) -> float:
     if value is None:
         return float("-inf")
     return value.timestamp()
+
+
+def _historical_match_sort_key(level: str) -> int:
+    return _HISTORICAL_MATCH_PRIORITY.get(level, len(_HISTORICAL_MATCH_PRIORITY))
 
 
 def _build_gap_minutes(*, event_time: datetime, previous_checked_at: datetime) -> int:
