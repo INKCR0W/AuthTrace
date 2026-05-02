@@ -125,6 +125,10 @@ class ResearchCurrentSignalSample(BaseModel):
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None = None
+    historical_match_event_id: int | None = None
+    historical_match_event_account_id: int | None = None
+    historical_match_event_account_name: str | None = None
+    historical_match_event_time: datetime | None = None
 
 
 class ResearchCurrentSignalGroupSample(BaseModel):
@@ -139,6 +143,10 @@ class ResearchCurrentSignalGroupSample(BaseModel):
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None = None
+    historical_match_event_id: int | None = None
+    historical_match_event_account_id: int | None = None
+    historical_match_event_account_name: str | None = None
+    historical_match_event_time: datetime | None = None
 
 
 class ResearchCurrentSignalGroupBreakdownItem(BaseModel):

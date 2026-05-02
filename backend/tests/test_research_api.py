@@ -965,6 +965,10 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "historical_match_label": "暂无历史 401 样本",
             "historical_match_rate": 0.0,
             "historical_best_pattern": None,
+            "historical_match_event_id": None,
+            "historical_match_event_account_id": None,
+            "historical_match_event_account_name": None,
+            "historical_match_event_time": None,
         }
     ]
 
@@ -1145,6 +1149,10 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "historical_match_label": "暂无历史 401 样本",
             "historical_match_rate": 0.0,
             "historical_best_pattern": None,
+            "historical_match_event_id": None,
+            "historical_match_event_account_id": None,
+            "historical_match_event_account_name": None,
+            "historical_match_event_time": None,
         }
     ]
 
@@ -1365,6 +1373,10 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "historical_match_label": "暂无历史 401 样本",
             "historical_match_rate": 0.0,
             "historical_best_pattern": None,
+            "historical_match_event_id": None,
+            "historical_match_event_account_id": None,
+            "historical_match_event_account_name": None,
+            "historical_match_event_time": None,
         }
     ]
 
@@ -1882,6 +1894,10 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
                     "historical_match_label": "与历史前序完全同模式",
                     "historical_match_rate": 100.0,
                     "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                    "historical_match_event_id": 1,
+                    "historical_match_event_account_id": 1,
+                    "historical_match_event_account_name": "Historical-Exact",
+                    "historical_match_event_time": "2026-05-02T11:55:00Z",
                 },
                 {
                     "account_id": 4,
@@ -1896,6 +1912,10 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
                     "historical_match_label": "被历史前序模式覆盖",
                     "historical_match_rate": 100.0,
                     "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                    "historical_match_event_id": 1,
+                    "historical_match_event_account_id": 1,
+                    "historical_match_event_account_name": "Historical-Exact",
+                    "historical_match_event_time": "2026-05-02T11:55:00Z",
                 },
             ],
         }
@@ -1912,10 +1932,18 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
         baseline["recent_samples"][0]["historical_best_pattern"]
         == "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message"
     )
+    assert baseline["recent_samples"][0]["historical_match_event_id"] == 1
+    assert baseline["recent_samples"][0]["historical_match_event_account_id"] == 1
+    assert baseline["recent_samples"][0]["historical_match_event_account_name"] == "Historical-Exact"
+    assert baseline["recent_samples"][0]["historical_match_event_time"] == "2026-05-02T11:55:00Z"
     assert baseline["recent_samples"][1]["historical_match_level"] == "covered_pattern"
     assert baseline["recent_samples"][1]["historical_match_rate"] == 100.0
+    assert baseline["recent_samples"][1]["historical_match_event_id"] == 1
+    assert baseline["recent_samples"][1]["historical_match_event_account_name"] == "Historical-Exact"
     assert baseline["recent_samples"][2]["historical_match_level"] == "partial_overlap"
     assert baseline["recent_samples"][2]["historical_match_rate"] == 50.0
+    assert baseline["recent_samples"][2]["historical_match_event_id"] == 1
+    assert baseline["recent_samples"][2]["historical_match_event_account_name"] == "Historical-Exact"
     assert baseline["recent_samples"][3] == {
         "account_id": 6,
         "account_name": "Current-No-Overlap",
@@ -1935,7 +1963,183 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
         "historical_match_label": "与历史前序未重合",
         "historical_match_rate": 0.0,
         "historical_best_pattern": None,
+        "historical_match_event_id": None,
+        "historical_match_event_account_id": None,
+        "historical_match_event_account_name": None,
+        "historical_match_event_time": None,
     }
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_prefers_latest_historical_event_for_same_pattern_replay() -> None:
+    session_factory = _create_session_factory()
+    base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        source = ManagementSource(
+            source_key="main",
+            source_name="Main Source",
+            base_url="http://localhost:8787",
+            created_at=base_time,
+            updated_at=base_time,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="manual",
+            status="success",
+            scan_started_at=base_time,
+            scan_finished_at=base_time,
+            created_at=base_time,
+            updated_at=base_time,
+            total_accounts=3,
+            eligible_accounts=3,
+            scanned_accounts=3,
+            success_accounts=3,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        older_historical = Account(
+            source_id=source.id,
+            auth_index="auth-historical-older",
+            name="Historical-Older",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=5),
+            last_seen_at=base_time,
+        )
+        latest_historical = Account(
+            source_id=source.id,
+            auth_index="auth-historical-latest",
+            name="Historical-Latest",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=4),
+            last_seen_at=base_time,
+        )
+        current_account = Account(
+            source_id=source.id,
+            auth_index="auth-current",
+            name="Current-Replay",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("96.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="same pattern",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        db.add_all([older_historical, latest_historical, current_account])
+        db.flush()
+
+        older_snapshot = AccountSnapshot(
+            account_id=older_historical.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=40),
+            created_at=base_time - timedelta(minutes=40),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="older sample",
+        )
+        latest_snapshot = AccountSnapshot(
+            account_id=latest_historical.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=20),
+            created_at=base_time - timedelta(minutes=20),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("94.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="latest sample",
+        )
+        db.add_all([older_snapshot, latest_snapshot])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=older_historical.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=30),
+                    related_snapshot_id=older_snapshot.id,
+                    previous_snapshot_id=older_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=30),
+                ),
+                AccountEvent(
+                    account_id=latest_historical.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=10),
+                    related_snapshot_id=latest_snapshot.id,
+                    previous_snapshot_id=latest_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=10),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    sample = response.json()["current_signal_baseline"]["recent_samples"][0]
+    assert sample["account_name"] == "Current-Replay"
+    assert sample["historical_match_level"] == "exact_pattern"
+    assert sample["historical_match_event_id"] == 2
+    assert sample["historical_match_event_account_id"] == 2
+    assert sample["historical_match_event_account_name"] == "Historical-Latest"
+    assert sample["historical_match_event_time"] == "2026-05-02T11:50:00Z"
 
     app.dependency_overrides.clear()
 

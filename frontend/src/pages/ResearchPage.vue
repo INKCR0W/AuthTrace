@@ -281,6 +281,14 @@ function currentSignalHistoricalMatchSummary(item: ResearchCurrentSignalSample) 
   return `${coverage}，最接近历史模式：${item.historical_best_pattern}`;
 }
 
+function currentSignalHistoricalReplaySummary(item: ResearchCurrentSignalSample | ResearchCurrentSignalGroupSample) {
+  if (!item.historical_match_event_id || !item.historical_match_event_account_name) {
+    return "";
+  }
+
+  return `历史样本：${item.historical_match_event_account_name} · ${formatDateTime(item.historical_match_event_time)}`;
+}
+
 function currentGroupHistoricalLikeSummary(item: ResearchCurrentSignalGroupSample) {
   return `${item.historical_match_label} / 连续 ${formatCount(item.consecutive_signal_snapshots)} 轮`;
 }
@@ -792,6 +800,11 @@ onMounted(() => {
                       <p v-if="sample.historical_best_pattern" class="subtle-line">
                         最接近：{{ sample.historical_best_pattern }}
                       </p>
+                      <p v-if="sample.historical_match_event_id" class="subtle-line">
+                        <RouterLink class="inline-link" :to="`/events/${sample.historical_match_event_id}`">
+                          {{ currentSignalHistoricalReplaySummary(sample) }}
+                        </RouterLink>
+                      </p>
                     </div>
                   </div>
                   <p v-else class="subtle-line">暂无高贴近样本</p>
@@ -899,6 +912,11 @@ onMounted(() => {
                 <p class="subtle-label">已观测信号</p>
                 <p class="subtle-line">{{ currentSignalPersistenceSummary(sample) }}</p>
                 <p class="subtle-line">{{ currentSignalHistoricalMatchSummary(sample) }}</p>
+                <p v-if="sample.historical_match_event_id" class="subtle-line">
+                  <RouterLink class="inline-link" :to="`/events/${sample.historical_match_event_id}`">
+                    {{ currentSignalHistoricalReplaySummary(sample) }}
+                  </RouterLink>
+                </p>
                 <div class="signal-chip-grid">
                   <div
                     v-for="label in sample.signal_labels"

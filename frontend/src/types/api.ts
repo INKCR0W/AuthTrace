@@ -134,6 +134,10 @@ export interface ResearchCurrentSignalSample {
   historical_match_label: string;
   historical_match_rate: number;
   historical_best_pattern: string | null;
+  historical_match_event_id: number | null;
+  historical_match_event_account_id: number | null;
+  historical_match_event_account_name: string | null;
+  historical_match_event_time: string | null;
 }
 
 export interface ResearchCurrentSignalGroupSample {
@@ -146,6 +150,10 @@ export interface ResearchCurrentSignalGroupSample {
   historical_match_label: string;
   historical_match_rate: number;
   historical_best_pattern: string | null;
+  historical_match_event_id: number | null;
+  historical_match_event_account_id: number | null;
+  historical_match_event_account_name: string | null;
+  historical_match_event_time: string | null;
 }
 
 export interface ResearchCurrentSignalGroupBreakdownItem {

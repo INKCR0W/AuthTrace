@@ -126,6 +126,10 @@ class ResearchCurrentSignalSample:
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None
+    historical_match_event_id: int | None
+    historical_match_event_account_id: int | None
+    historical_match_event_account_name: str | None
+    historical_match_event_time: datetime | None
 
 
 @dataclass(slots=True)
@@ -139,6 +143,10 @@ class ResearchCurrentSignalGroupSample:
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None
+    historical_match_event_id: int | None
+    historical_match_event_account_id: int | None
+    historical_match_event_account_name: str | None
+    historical_match_event_time: datetime | None
 
 
 @dataclass(slots=True)
@@ -294,7 +302,7 @@ def get_research_overview(
         current_signal_baseline=_build_current_signal_baseline(
             db,
             filters=filters,
-            historical_previous_snapshots=[snapshot for _, _, snapshot in event_rows if snapshot is not None],
+            historical_event_rows=event_rows,
         ),
     )
 
@@ -639,7 +647,7 @@ def _build_current_signal_baseline(
     db: Session,
     *,
     filters: ResearchOverviewFilters,
-    historical_previous_snapshots: list[AccountSnapshot],
+    historical_event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
 ) -> ResearchCurrentSignalBaseline:
     account_scope_conditions = _build_account_scope_conditions(filters)
     account_rows = list(
@@ -690,11 +698,7 @@ def _build_current_signal_baseline(
         db,
         account_ids=[account.id for account, _, _ in signal_accounts],
     )
-    historical_pattern_keys = [
-        _extract_snapshot_signal_keys(snapshot)
-        for snapshot in historical_previous_snapshots
-    ]
-    historical_pattern_keys = [pattern for pattern in historical_pattern_keys if pattern]
+    historical_candidates = _build_historical_signal_candidates(historical_event_rows)
 
     for account, signal_keys, _ in signal_accounts:
         group_key = (account.provider, account.account_type)
@@ -704,7 +708,7 @@ def _build_current_signal_baseline(
         )
         historical_match = _evaluate_historical_signal_match(
             signal_keys=signal_keys,
-            historical_pattern_keys=historical_pattern_keys,
+            historical_candidates=historical_candidates,
         )
         streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
         historical_match_counter[historical_match.level] += 1
@@ -738,6 +742,10 @@ def _build_current_signal_baseline(
             historical_match_label=_HISTORICAL_MATCH_LABELS[historical_match.level],
             historical_match_rate=historical_match.rate,
             historical_best_pattern=historical_match.best_pattern_label,
+            historical_match_event_id=historical_match.best_event_id,
+            historical_match_event_account_id=historical_match.best_event_account_id,
+            historical_match_event_account_name=historical_match.best_event_account_name,
+            historical_match_event_time=historical_match.best_event_time,
         )
         samples.append(current_sample)
         if historical_match.level in _HISTORICAL_LIKE_LEVELS:
@@ -752,6 +760,10 @@ def _build_current_signal_baseline(
                     historical_match_label=current_sample.historical_match_label,
                     historical_match_rate=current_sample.historical_match_rate,
                     historical_best_pattern=current_sample.historical_best_pattern,
+                    historical_match_event_id=current_sample.historical_match_event_id,
+                    historical_match_event_account_id=current_sample.historical_match_event_account_id,
+                    historical_match_event_account_name=current_sample.historical_match_event_account_name,
+                    historical_match_event_time=current_sample.historical_match_event_time,
                 )
             )
 
@@ -1030,6 +1042,21 @@ class _HistoricalSignalMatchResult:
     level: str
     rate: float
     best_pattern_label: str | None
+    best_event_id: int | None
+    best_event_account_id: int | None
+    best_event_account_name: str | None
+    best_event_time: datetime | None
+
+
+@dataclass(slots=True)
+class _HistoricalSignalCandidate:
+    event_id: int
+    event_account_id: int
+    event_account_name: str
+    event_time: datetime
+    signal_keys: list[str]
+    pattern_key: str
+    pattern_label: str
 
 
 def _extract_account_signal_keys(account: Account) -> list[str]:
@@ -1073,13 +1100,17 @@ def _extract_snapshot_signal_keys(snapshot: AccountSnapshot) -> list[str]:
 def _evaluate_historical_signal_match(
     *,
     signal_keys: list[str],
-    historical_pattern_keys: list[list[str]],
+    historical_candidates: list[_HistoricalSignalCandidate],
 ) -> _HistoricalSignalMatchResult:
-    if not historical_pattern_keys:
+    if not historical_candidates:
         return _HistoricalSignalMatchResult(
             level="no_history",
             rate=0.0,
             best_pattern_label=None,
+            best_event_id=None,
+            best_event_account_id=None,
+            best_event_account_name=None,
+            best_event_time=None,
         )
 
     current_signal_set = frozenset(signal_keys)
@@ -1088,44 +1119,63 @@ def _evaluate_historical_signal_match(
             level="no_overlap",
             rate=0.0,
             best_pattern_label=None,
+            best_event_id=None,
+            best_event_account_id=None,
+            best_event_account_name=None,
+            best_event_time=None,
         )
 
     best_candidate: tuple[int, int, int, int, str, str] | None = None
-    best_candidate_label: str | None = None
+    best_signal_candidate: _HistoricalSignalCandidate | None = None
     best_matched_count = 0
     best_is_exact = False
     best_is_covered = False
 
-    for historical_keys in historical_pattern_keys:
-        historical_signal_set = frozenset(historical_keys)
+    for historical_candidate in historical_candidates:
+        historical_signal_set = frozenset(historical_candidate.signal_keys)
         matched_count = len(current_signal_set & historical_signal_set)
         if matched_count <= 0:
             continue
 
         is_exact = historical_signal_set == current_signal_set
         is_covered = current_signal_set.issubset(historical_signal_set)
-        pattern_key = "|".join(historical_keys)
-        pattern_label = _build_signal_pattern_label(pattern_key)
         candidate = (
             -matched_count,
             -int(is_exact),
             -int(is_covered),
             len(historical_signal_set),
-            pattern_label,
-            pattern_key,
+            historical_candidate.pattern_label,
+            historical_candidate.pattern_key,
         )
-        if best_candidate is None or candidate < best_candidate:
+        candidate_is_better = best_candidate is None or candidate < best_candidate
+        candidate_has_newer_event = (
+            best_signal_candidate is not None
+            and candidate == best_candidate
+            and (
+                historical_candidate.event_time,
+                historical_candidate.event_id,
+            )
+            > (
+                best_signal_candidate.event_time,
+                best_signal_candidate.event_id,
+            )
+        )
+        if candidate_is_better or candidate_has_newer_event:
             best_candidate = candidate
-            best_candidate_label = pattern_label
+            best_signal_candidate = historical_candidate
             best_matched_count = matched_count
             best_is_exact = is_exact
             best_is_covered = is_covered
 
-    if best_candidate is None or best_candidate_label is None:
+    if best_candidate is None or best_signal_candidate is None:
         return _HistoricalSignalMatchResult(
             level="no_overlap",
             rate=0.0,
             best_pattern_label=None,
+            best_event_id=None,
+            best_event_account_id=None,
+            best_event_account_name=None,
+            best_event_time=None,
         )
 
     if best_is_exact:
@@ -1141,8 +1191,41 @@ def _evaluate_historical_signal_match(
             numerator=best_matched_count,
             denominator=len(current_signal_set),
         ),
-        best_pattern_label=best_candidate_label,
+        best_pattern_label=best_signal_candidate.pattern_label,
+        best_event_id=best_signal_candidate.event_id,
+        best_event_account_id=best_signal_candidate.event_account_id,
+        best_event_account_name=best_signal_candidate.event_account_name,
+        best_event_time=best_signal_candidate.event_time,
     )
+
+
+def _build_historical_signal_candidates(
+    event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
+) -> list[_HistoricalSignalCandidate]:
+    candidates: list[_HistoricalSignalCandidate] = []
+
+    for event, account, previous_snapshot in event_rows:
+        if previous_snapshot is None:
+            continue
+
+        signal_keys = _extract_snapshot_signal_keys(previous_snapshot)
+        if not signal_keys:
+            continue
+
+        pattern_key = "|".join(signal_keys)
+        candidates.append(
+            _HistoricalSignalCandidate(
+                event_id=event.id,
+                event_account_id=account.id,
+                event_account_name=account.name,
+                event_time=_ensure_utc(event.event_time),
+                signal_keys=signal_keys,
+                pattern_key=pattern_key,
+                pattern_label=_build_signal_pattern_label(pattern_key),
+            )
+        )
+
+    return candidates
 
 
 def _build_status_message_excerpt(value: str | None, *, limit: int = 120) -> str | None:
