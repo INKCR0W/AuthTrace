@@ -172,6 +172,9 @@ class ResearchCurrentSignalGroupBreakdownItem:
     multi_round_signal_accounts: int
     historical_like_accounts: int
     historical_like_rate: float
+    top_historical_gap_bucket: str | None
+    top_historical_gap_label: str | None
+    top_historical_gap_count: int
     top_signal_pattern_key: str | None
     top_signal_pattern: str | None
     top_historical_like_samples: list[ResearchCurrentSignalGroupSample]
@@ -723,6 +726,7 @@ def _build_current_signal_baseline(
     signal_group_counter = Counter[tuple[str | None, str | None]]()
     multi_round_group_counter = Counter[tuple[str | None, str | None]]()
     historical_like_group_counter = Counter[tuple[str | None, str | None]]()
+    group_historical_gap_counter: dict[tuple[str | None, str | None], Counter[str]] = {}
     group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]] = {}
     group_historical_like_samples: dict[
         tuple[str | None, str | None],
@@ -783,6 +787,10 @@ def _build_current_signal_baseline(
             multi_round_group_counter[group_key] += 1
         if historical_match.level in _HISTORICAL_LIKE_LEVELS:
             historical_like_group_counter[group_key] += 1
+            if historical_match.best_gap_bucket is not None:
+                group_historical_gap_counter.setdefault(group_key, Counter())[
+                    historical_match.best_gap_bucket
+                ] += 1
         status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
         if status_message_excerpt:
             status_counter[status_message_excerpt] += 1
@@ -872,6 +880,7 @@ def _build_current_signal_baseline(
             signal_group_counter=signal_group_counter,
             multi_round_group_counter=multi_round_group_counter,
             historical_like_group_counter=historical_like_group_counter,
+            group_historical_gap_counter=group_historical_gap_counter,
             group_pattern_counter=group_pattern_counter,
             group_historical_like_samples=group_historical_like_samples,
         ),
@@ -1010,6 +1019,7 @@ def _build_current_signal_group_breakdown(
     signal_group_counter: Counter[tuple[str | None, str | None]],
     multi_round_group_counter: Counter[tuple[str | None, str | None]],
     historical_like_group_counter: Counter[tuple[str | None, str | None]],
+    group_historical_gap_counter: dict[tuple[str | None, str | None], Counter[str]],
     group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]],
     group_historical_like_samples: dict[
         tuple[str | None, str | None],
@@ -1021,6 +1031,19 @@ def _build_current_signal_group_breakdown(
     for group_key, signal_accounts in signal_group_counter.items():
         provider, account_type = group_key
         observed_accounts = observed_group_counter.get(group_key, 0)
+        top_historical_gap_bucket = _pick_top_historical_gap_bucket(
+            group_historical_gap_counter.get(group_key, Counter())
+        )
+        top_historical_gap_label = (
+            _PREVIOUS_GAP_BAND_LABELS[top_historical_gap_bucket]
+            if top_historical_gap_bucket is not None
+            else None
+        )
+        top_historical_gap_count = (
+            group_historical_gap_counter.get(group_key, Counter()).get(top_historical_gap_bucket, 0)
+            if top_historical_gap_bucket is not None
+            else 0
+        )
         top_pattern_key = _pick_top_signal_pattern_key(group_pattern_counter.get(group_key, Counter()))
         top_pattern = None if top_pattern_key is None else _build_signal_pattern_label(top_pattern_key)
         top_historical_like_samples = sorted(
@@ -1053,6 +1076,9 @@ def _build_current_signal_group_breakdown(
                     numerator=historical_like_group_counter.get(group_key, 0),
                     denominator=signal_accounts,
                 ),
+                top_historical_gap_bucket=top_historical_gap_bucket,
+                top_historical_gap_label=top_historical_gap_label,
+                top_historical_gap_count=top_historical_gap_count,
                 top_signal_pattern_key=top_pattern_key,
                 top_signal_pattern=top_pattern,
                 top_historical_like_samples=top_historical_like_samples,
@@ -1064,6 +1090,8 @@ def _build_current_signal_group_breakdown(
         key=lambda item: (
             -item.historical_like_accounts,
             -item.historical_like_rate,
+            _previous_gap_bucket_sort_key(item.top_historical_gap_bucket),
+            -item.top_historical_gap_count,
             -item.signal_accounts,
             -item.multi_round_signal_accounts,
             -item.signal_rate,
@@ -1111,6 +1139,17 @@ def _pick_top_signal_pattern_key(counter: Counter[str]) -> str | None:
     return pattern
 
 
+def _pick_top_historical_gap_bucket(counter: Counter[str]) -> str | None:
+    if not counter:
+        return None
+
+    gap_bucket, _ = min(
+        counter.items(),
+        key=lambda item: (-item[1], _previous_gap_bucket_sort_key(item[0]), item[0]),
+    )
+    return gap_bucket
+
+
 _SIGNAL_LABELS = {
     "weekly_ge_90": "周额度 >= 90%",
     "short_ge_90": "短周期 >= 90%",
@@ -1129,6 +1168,9 @@ _PREVIOUS_GAP_BANDS = (
 )
 RESEARCH_PRE_401_GAP_BUCKET_KEYS = tuple(key for key, _ in _PREVIOUS_GAP_BANDS)
 _PREVIOUS_GAP_BAND_LABELS = dict(_PREVIOUS_GAP_BANDS)
+_PREVIOUS_GAP_BAND_ORDER = {
+    key: index for index, (key, _) in enumerate(_PREVIOUS_GAP_BANDS)
+}
 _HISTORICAL_MATCH_LABELS = {
     "exact_pattern": "与历史前序完全同模式",
     "covered_pattern": "被历史前序模式覆盖",
@@ -1571,3 +1613,9 @@ def _bucket_previous_gap(*, event_time: datetime, previous_checked_at: datetime)
     if gap < timedelta(hours=24):
         return "6h_24h"
     return "24h_plus"
+
+
+def _previous_gap_bucket_sort_key(bucket: str | None) -> int:
+    if bucket is None:
+        return len(_PREVIOUS_GAP_BAND_ORDER)
+    return _PREVIOUS_GAP_BAND_ORDER.get(bucket, len(_PREVIOUS_GAP_BAND_ORDER))

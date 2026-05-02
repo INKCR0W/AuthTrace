@@ -178,6 +178,9 @@ export interface ResearchCurrentSignalGroupBreakdownItem {
   multi_round_signal_accounts: number;
   historical_like_accounts: number;
   historical_like_rate: number;
+  top_historical_gap_bucket: string | null;
+  top_historical_gap_label: string | null;
+  top_historical_gap_count: number;
   top_signal_pattern_key: string | null;
   top_signal_pattern: string | null;
   top_historical_like_samples: ResearchCurrentSignalGroupSample[];

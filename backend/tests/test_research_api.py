@@ -931,6 +931,9 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "multi_round_signal_accounts": 1,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_historical_gap_bucket": None,
+            "top_historical_gap_label": None,
+            "top_historical_gap_count": 0,
             "top_signal_pattern_key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
             "top_historical_like_samples": [],
@@ -1122,6 +1125,9 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_historical_gap_bucket": None,
+            "top_historical_gap_label": None,
+            "top_historical_gap_count": 0,
             "top_signal_pattern_key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
             "top_historical_like_samples": [],
@@ -1352,6 +1358,9 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "multi_round_signal_accounts": 1,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_historical_gap_bucket": None,
+            "top_historical_gap_label": None,
+            "top_historical_gap_count": 0,
             "top_signal_pattern_key": "short_ge_90|limit_reached|status_message_present",
             "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
             "top_historical_like_samples": [],
@@ -1509,6 +1518,9 @@ def test_research_overview_api_applies_current_signal_pattern_key_filter() -> No
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_historical_gap_bucket": None,
+            "top_historical_gap_label": None,
+            "top_historical_gap_count": 0,
             "top_signal_pattern_key": "short_ge_90|limit_reached|status_message_present",
             "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
             "top_historical_like_samples": [],
@@ -2386,6 +2398,9 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 2,
             "historical_like_rate": 50.0,
+            "top_historical_gap_bucket": "lt_15m",
+            "top_historical_gap_label": "15 分钟内",
+            "top_historical_gap_count": 2,
             "top_signal_pattern_key": "remaining_empty",
             "top_signal_pattern": "remaining <= 0",
             "top_historical_like_samples": [
@@ -2976,6 +2991,9 @@ def test_research_overview_api_filters_current_baseline_by_match_level_and_strea
             "multi_round_signal_accounts": 1,
             "historical_like_accounts": 1,
             "historical_like_rate": 100.0,
+            "top_historical_gap_bucket": "lt_15m",
+            "top_historical_gap_label": "15 分钟内",
+            "top_historical_gap_count": 1,
             "top_signal_pattern_key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
             "top_historical_like_samples": [
@@ -3555,6 +3573,9 @@ def test_research_overview_api_stabilizes_group_top_pattern_on_tie() -> None:
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_historical_gap_bucket": None,
+            "top_historical_gap_label": None,
+            "top_historical_gap_count": 0,
             "top_signal_pattern_key": "allowed_false",
             "top_signal_pattern": "allowed=false",
             "top_historical_like_samples": [],
@@ -3715,13 +3736,207 @@ def test_research_overview_api_prioritizes_groups_with_more_historical_like_samp
     ]
     assert group_breakdown[0]["historical_like_accounts"] == 1
     assert group_breakdown[0]["historical_like_rate"] == 100.0
+    assert group_breakdown[0]["top_historical_gap_bucket"] == "lt_15m"
+    assert group_breakdown[0]["top_historical_gap_label"] == "15 分钟内"
+    assert group_breakdown[0]["top_historical_gap_count"] == 1
     assert group_breakdown[0]["top_signal_pattern_key"] == "weekly_ge_90|limit_reached|allowed_false|status_message_present"
     assert [item["account_name"] for item in group_breakdown[0]["top_historical_like_samples"]] == [
         "Current-OpenAI-Exact",
     ]
     assert group_breakdown[1]["historical_like_accounts"] == 0
     assert group_breakdown[1]["historical_like_rate"] == 0.0
+    assert group_breakdown[1]["top_historical_gap_bucket"] is None
+    assert group_breakdown[1]["top_historical_gap_label"] is None
+    assert group_breakdown[1]["top_historical_gap_count"] == 0
     assert group_breakdown[1]["top_signal_pattern_key"] in {"remaining_empty", "short_ge_90"}
     assert group_breakdown[1]["top_historical_like_samples"] == []
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_prioritizes_groups_with_fresher_historical_evidence_on_tie() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=1),
+            scan_finished_at=base_time - timedelta(minutes=55),
+            total_accounts=4,
+            eligible_accounts=4,
+            scanned_accounts=4,
+            success_accounts=4,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        historical_fresh = Account(
+            source_id=source.id,
+            auth_index="historical-fresh",
+            name="Historical-Fresh",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time - timedelta(minutes=5),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time - timedelta(minutes=5),
+        )
+        historical_stale = Account(
+            source_id=source.id,
+            auth_index="historical-stale",
+            name="Historical-Stale",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        current_fresh = Account(
+            source_id=source.id,
+            auth_index="current-fresh",
+            name="Current-Fresh",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("95.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="fresh signal",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        current_stale = Account(
+            source_id=source.id,
+            auth_index="current-stale",
+            name="Current-Stale",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_short_used_percent=Decimal("95.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        db.add_all([historical_fresh, historical_stale, current_fresh, current_stale])
+        db.flush()
+
+        historical_fresh_snapshot = AccountSnapshot(
+            account_id=historical_fresh.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=10),
+            created_at=base_time - timedelta(minutes=10),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="fresh signal",
+        )
+        historical_stale_snapshot = AccountSnapshot(
+            account_id=historical_stale.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=8),
+            created_at=base_time - timedelta(hours=8),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            short_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+        )
+        db.add_all([historical_fresh_snapshot, historical_stale_snapshot])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=historical_fresh.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=5),
+                    related_snapshot_id=historical_fresh_snapshot.id,
+                    previous_snapshot_id=historical_fresh_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=5),
+                ),
+                AccountEvent(
+                    account_id=historical_stale.id,
+                    event_type="became_401",
+                    event_time=base_time,
+                    related_snapshot_id=historical_stale_snapshot.id,
+                    previous_snapshot_id=historical_stale_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    group_breakdown = response.json()["current_signal_baseline"]["current_signal_group_breakdown"]
+    assert [item["label"] for item in group_breakdown] == [
+        "openai / chatgpt",
+        "azure / chatgpt",
+    ]
+    assert group_breakdown[0]["top_historical_gap_bucket"] == "lt_15m"
+    assert group_breakdown[0]["top_historical_gap_label"] == "15 分钟内"
+    assert group_breakdown[0]["top_historical_gap_count"] == 1
+    assert group_breakdown[1]["top_historical_gap_bucket"] == "6h_24h"
+    assert group_breakdown[1]["top_historical_gap_label"] == "6-24 小时"
+    assert group_breakdown[1]["top_historical_gap_count"] == 1
 
     app.dependency_overrides.clear()

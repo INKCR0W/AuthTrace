@@ -390,7 +390,13 @@ const leadingHistoricalLikeGroupSummary = computed(() => {
     return "";
   }
 
-  return `${item.label} 当前有 ${formatCount(item.historical_like_accounts)} 个样本与历史 401 前模式高度贴近，占该组研究信号账号的 ${formatPercent(item.historical_like_rate)}。`;
+  const segments = [
+    `${item.label} 当前有 ${formatCount(item.historical_like_accounts)} 个样本与历史 401 前模式高度贴近，占该组研究信号账号的 ${formatPercent(item.historical_like_rate)}`,
+  ];
+  if (item.top_historical_gap_label && item.top_historical_gap_count > 0) {
+    segments.push(`其中最常命中的历史证据新鲜度是 ${item.top_historical_gap_label}（${formatCount(item.top_historical_gap_count)} 个样本）`);
+  }
+  return `${segments.join("，")}。`;
 });
 
 function syncFilters(next: Partial<typeof filters>) {
@@ -852,6 +858,15 @@ function currentGroupHistoricalLikeSummary(item: ResearchCurrentSignalGroupSampl
     segments.push(`前序 ${item.historical_match_gap_label}`);
   }
   return segments.join(" / ");
+}
+
+function currentGroupHistoricalGapSummary(
+  item: ResearchOverviewResponse["current_signal_baseline"]["current_signal_group_breakdown"][number],
+) {
+  if (!item.top_historical_gap_label || item.top_historical_gap_count <= 0) {
+    return "暂无高贴近历史证据";
+  }
+  return `${item.top_historical_gap_label} · ${formatCount(item.top_historical_gap_count)} 个样本`;
 }
 
 watch(
@@ -1539,7 +1554,7 @@ watch(
           {{ leadingHistoricalLikeGroupSummary }}
         </p>
         <p v-if="hasHistoricalPreviousSamples" class="subtle-line">
-          “历史高贴近”只统计与历史 `401` 前模式“完全同模式”或“被历史模式覆盖”的当前样本，可优先作为下一批回放对象。
+          “历史高贴近”只统计与历史 `401` 前模式“完全同模式”或“被历史模式覆盖”的当前样本；若数量相同，会优先把命中过更近历史证据的组合排在前面。
         </p>
         <p v-else class="subtle-line">
           当前范围内还没有历史 `401` 前样本，因此“历史高贴近”列会先保持为 `0`；现阶段更适合先按信号规模、连续轮数和主导模式积累样本。
@@ -1555,6 +1570,7 @@ watch(
                 <th>信号率</th>
                 <th>连续 2 轮+</th>
                 <th>历史高贴近</th>
+                <th>最佳历史证据</th>
                 <th>高贴近样本</th>
                 <th>主导模式</th>
                 <th>下钻</th>
@@ -1578,6 +1594,12 @@ watch(
                 <td>
                   {{ formatCount(item.historical_like_accounts) }}
                   <p class="subtle-line">{{ formatPercent(item.historical_like_rate) }}</p>
+                </td>
+                <td>
+                  <p>{{ currentGroupHistoricalGapSummary(item) }}</p>
+                  <p v-if="item.top_historical_gap_label" class="subtle-line">
+                    仅统计历史高贴近样本命中的最佳历史证据
+                  </p>
                 </td>
                 <td>
                   <div v-if="item.top_historical_like_samples.length" class="observation-list compact-observations">
@@ -1614,6 +1636,15 @@ watch(
                       @click="applyScopeFilter(item.provider, item.account_type)"
                     >
                       组合
+                    </button>
+                    <button
+                      v-if="item.top_historical_gap_bucket"
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isCurrentHistoricalGapBucketFilterActive(item.top_historical_gap_bucket)"
+                      @click="applyCurrentHistoricalGapBucketFilter(item.top_historical_gap_bucket)"
+                    >
+                      历史证据
                     </button>
                     <button
                       v-if="item.top_signal_pattern_key"
