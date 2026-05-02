@@ -336,6 +336,26 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         },
         {"key": "warmup", "label": "warmup", "count": 1},
     ]
+    signal_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_comparison"]
+    }
+    assert len(payload["signal_comparison"]) == 6
+    assert payload["signal_comparison"][0]["key"] == "status_message_present"
+    assert signal_comparison == {
+        "weekly_ge_90": (1, 33.33, 0, 0.0, 33.33),
+        "short_ge_90": (1, 33.33, 0, 0.0, 33.33),
+        "limit_reached": (1, 33.33, 0, 0.0, 33.33),
+        "allowed_false": (1, 33.33, 0, 0.0, 33.33),
+        "remaining_empty": (1, 33.33, 0, 0.0, 33.33),
+        "status_message_present": (2, 66.67, 0, 0.0, 66.67),
+    }
 
     recent_samples = payload["recent_event_samples"]
     assert [item["event_id"] for item in recent_samples[:3]] == [1, 2, 3]
@@ -643,6 +663,24 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         {"key": "soft_block", "label": "soft_block", "count": 1},
         {"key": "warmup", "label": "warmup", "count": 1},
     ]
+    signal_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_comparison"]
+    }
+    assert signal_comparison == {
+        "weekly_ge_90": (1, 50.0, 0, 0.0, 50.0),
+        "short_ge_90": (0, 0.0, 0, 0.0, 0.0),
+        "limit_reached": (1, 50.0, 0, 0.0, 50.0),
+        "allowed_false": (1, 50.0, 0, 0.0, 50.0),
+        "remaining_empty": (0, 0.0, 0, 0.0, 0.0),
+        "status_message_present": (2, 100.0, 0, 0.0, 100.0),
+    }
     assert [item["event_id"] for item in payload["recent_event_samples"]] == [1, 3]
     assert payload["current_signal_baseline"] == {
         "observed_accounts": 1,
@@ -1244,6 +1282,24 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "count": 1,
         }
     ]
+    signal_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_comparison"]
+    }
+    assert signal_comparison == {
+        "weekly_ge_90": (0, 0.0, 1, 33.33, -33.33),
+        "short_ge_90": (0, 0.0, 1, 33.33, -33.33),
+        "limit_reached": (0, 0.0, 2, 66.67, -66.67),
+        "allowed_false": (0, 0.0, 1, 33.33, -33.33),
+        "remaining_empty": (0, 0.0, 0, 0.0, 0.0),
+        "status_message_present": (0, 0.0, 1, 33.33, -33.33),
+    }
     assert baseline["recent_samples"] == [
         {
             "account_id": 1,
@@ -1483,6 +1539,24 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
             "previous_status_message": "soft_block",
         }
     ]
+    signal_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_comparison"]
+    }
+    assert signal_comparison == {
+        "weekly_ge_90": (1, 50.0, 1, 100.0, -50.0),
+        "short_ge_90": (1, 50.0, 0, 0.0, 50.0),
+        "limit_reached": (1, 50.0, 1, 100.0, -50.0),
+        "allowed_false": (1, 50.0, 1, 100.0, -50.0),
+        "remaining_empty": (1, 50.0, 0, 0.0, 50.0),
+        "status_message_present": (1, 50.0, 0, 0.0, 50.0),
+    }
     assert payload["current_signal_baseline"]["signal_accounts"] == 1
 
     app.dependency_overrides.clear()

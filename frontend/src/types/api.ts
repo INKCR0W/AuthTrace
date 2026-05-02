@@ -84,6 +84,16 @@ export interface ResearchBucketCount {
   count: number;
 }
 
+export interface ResearchSignalComparisonItem {
+  key: string;
+  label: string;
+  pre_401_count: number;
+  pre_401_rate: number;
+  current_count: number;
+  current_rate: number;
+  rate_gap: number;
+}
+
 export interface ResearchPre401Insights {
   sampled_events: number;
   events_with_previous_snapshot: number;
@@ -139,6 +149,7 @@ export interface ResearchOverviewResponse {
   summary: ResearchOverviewSummary;
   provider_account_type_breakdown: ResearchCombinationBreakdownItem[];
   event_hour_distribution: ResearchHourlyDistributionPoint[];
+  signal_comparison: ResearchSignalComparisonItem[];
   pre_401_insights: ResearchPre401Insights;
   recent_event_samples: ResearchEventSample[];
   current_signal_baseline: ResearchCurrentSignalBaseline;

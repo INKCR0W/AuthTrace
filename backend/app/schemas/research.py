@@ -48,6 +48,18 @@ class ResearchBucketCount(BaseModel):
     count: int
 
 
+class ResearchSignalComparisonItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    label: str
+    pre_401_count: int
+    pre_401_rate: float
+    current_count: int
+    current_rate: float
+    rate_gap: float
+
+
 class ResearchPre401Insights(BaseModel):
     sampled_events: int
     events_with_previous_snapshot: int
@@ -128,6 +140,7 @@ class ResearchOverviewResponse(BaseModel):
     summary: ResearchOverviewSummary
     provider_account_type_breakdown: list[ResearchCombinationBreakdownItem] = Field(default_factory=list)
     event_hour_distribution: list[ResearchHourlyDistributionPoint] = Field(default_factory=list)
+    signal_comparison: list[ResearchSignalComparisonItem] = Field(default_factory=list)
     pre_401_insights: ResearchPre401Insights
     recent_event_samples: list[ResearchEventSample] = Field(default_factory=list)
     current_signal_baseline: ResearchCurrentSignalBaseline

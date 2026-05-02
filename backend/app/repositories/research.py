@@ -53,6 +53,17 @@ class ResearchBucketCount:
 
 
 @dataclass(slots=True)
+class ResearchSignalComparisonItem:
+    key: str
+    label: str
+    pre_401_count: int
+    pre_401_rate: float
+    current_count: int
+    current_rate: float
+    rate_gap: float
+
+
+@dataclass(slots=True)
 class ResearchPre401Insights:
     sampled_events: int
     events_with_previous_snapshot: int
@@ -132,6 +143,7 @@ class ResearchOverview:
     summary: ResearchOverviewSummary
     provider_account_type_breakdown: list[ResearchCombinationBreakdownItem]
     event_hour_distribution: list[ResearchHourlyDistributionPoint]
+    signal_comparison: list[ResearchSignalComparisonItem]
     pre_401_insights: ResearchPre401Insights
     recent_event_samples: list[ResearchEventSample]
     current_signal_baseline: ResearchCurrentSignalBaseline
@@ -161,6 +173,10 @@ def get_research_overview(
         account_type=account_type,
         current_signal_key=current_signal_key,
         pre_401_signal_key=pre_401_signal_key,
+    )
+    scope_filters = ResearchOverviewFilters(
+        provider=provider,
+        account_type=account_type,
     )
     account_scope_conditions = _build_account_scope_conditions(filters)
 
@@ -230,6 +246,11 @@ def get_research_overview(
             filters=filters,
         ),
         event_hour_distribution=_build_event_hour_distribution(event_rows),
+        signal_comparison=_build_signal_comparison(
+            db,
+            event_rows=event_rows,
+            filters=scope_filters,
+        ),
         pre_401_insights=_build_pre_401_insights(pre_401_event_rows),
         recent_event_samples=_build_recent_event_samples(pre_401_event_rows),
         current_signal_baseline=_build_current_signal_baseline(db, filters=filters),
@@ -370,6 +391,73 @@ def _build_pre_401_insights(
         signal_breakdown=_build_signal_breakdown(signal_counter),
         signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
         top_status_messages=_build_top_status_messages(status_counter),
+    )
+
+
+def _build_signal_comparison(
+    db: Session,
+    *,
+    event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
+    filters: ResearchOverviewFilters,
+) -> list[ResearchSignalComparisonItem]:
+    previous_snapshots = [snapshot for _, _, snapshot in event_rows if snapshot is not None]
+    pre_401_counter = Counter[str]()
+    for snapshot in previous_snapshots:
+        pre_401_counter.update(_extract_snapshot_signal_keys(snapshot))
+
+    current_accounts = list(
+        db.scalars(
+            select(Account).where(
+                *_build_account_scope_conditions(filters),
+                Account.disabled.is_(False),
+                Account.current_is_401.is_(False),
+            )
+        )
+    )
+    current_counter = Counter[str]()
+    for account in current_accounts:
+        current_counter.update(_extract_account_signal_keys(account))
+
+    pre_401_denominator = len(previous_snapshots)
+    current_denominator = len(current_accounts)
+    items = [
+        ResearchSignalComparisonItem(
+            key=key,
+            label=_SIGNAL_LABELS[key],
+            pre_401_count=pre_401_counter.get(key, 0),
+            pre_401_rate=_to_rate_percent(
+                numerator=pre_401_counter.get(key, 0),
+                denominator=pre_401_denominator,
+            ),
+            current_count=current_counter.get(key, 0),
+            current_rate=_to_rate_percent(
+                numerator=current_counter.get(key, 0),
+                denominator=current_denominator,
+            ),
+            rate_gap=round(
+                _to_rate_percent(
+                    numerator=pre_401_counter.get(key, 0),
+                    denominator=pre_401_denominator,
+                )
+                - _to_rate_percent(
+                    numerator=current_counter.get(key, 0),
+                    denominator=current_denominator,
+                ),
+                2,
+            ),
+        )
+        for key in RESEARCH_SIGNAL_KEYS
+    ]
+    return sorted(
+        items,
+        key=lambda item: (
+            -int(item.pre_401_count > 0 or item.current_count > 0),
+            -item.rate_gap,
+            -item.pre_401_count,
+            -item.current_count,
+            item.current_rate,
+            item.label,
+        ),
     )
 
 

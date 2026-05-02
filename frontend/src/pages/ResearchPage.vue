@@ -112,6 +112,13 @@ const dominantCurrentSignalPattern = computed(
 const dominantPre401SignalPattern = computed(
   () => overview.value?.pre_401_insights.signal_pattern_breakdown[0] ?? null,
 );
+const leadingSignalComparison = computed(() => {
+  const item = overview.value?.signal_comparison[0] ?? null;
+  if (!item || item.rate_gap <= 0) {
+    return null;
+  }
+  return item;
+});
 const dominantCurrentSignalPatternSummary = computed(() => {
   const baseline = overview.value?.current_signal_baseline;
   const dominantPattern = dominantCurrentSignalPattern.value;
@@ -131,6 +138,14 @@ const dominantPre401SignalPatternSummary = computed(() => {
   }
 
   return `历史 401 前最常见的信号组合覆盖 ${formatCount(dominantPattern.count)} / ${formatCount(insights.events_with_previous_snapshot)} 个可回放样本：${dominantPattern.label}`;
+});
+const leadingSignalComparisonSummary = computed(() => {
+  const item = leadingSignalComparison.value;
+  if (!item) {
+    return "";
+  }
+
+  return `${item.label} 在历史 401 前的命中率比当前基线高 ${formatPercent(item.rate_gap)}，可优先作为前序研究信号关注。`;
 });
 
 async function loadOverview() {
@@ -281,6 +296,9 @@ onMounted(() => {
     </p>
     <p v-if="selectedPre401SignalLabel" class="subtle-line">
       “前序信号”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
+    </p>
+    <p v-if="selectedCurrentSignalLabel || selectedPre401SignalLabel" class="subtle-line">
+      “信号对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 前序信号”下拉局部收窄，便于稳定比较历史样本与当前基线。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
@@ -472,6 +490,49 @@ onMounted(() => {
           </div>
         </article>
       </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">信号对照</p>
+            <h3>历史 401 前信号与当前基线谁更集中</h3>
+          </div>
+        </div>
+
+        <p v-if="leadingSignalComparisonSummary" class="subtle-line">
+          {{ leadingSignalComparisonSummary }}
+        </p>
+        <p v-else class="subtle-line">
+          当前范围内还没有出现“历史命中率明显高于当前基线”的单一信号，需结合组合模式与样本回放继续判断。
+        </p>
+
+        <div v-if="overview.signal_comparison.length" class="table-wrap">
+          <table class="data-table compact">
+            <thead>
+              <tr>
+                <th>信号</th>
+                <th>历史前序样本</th>
+                <th>历史命中率</th>
+                <th>当前基线账号</th>
+                <th>当前命中率</th>
+                <th>历史-当前</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in overview.signal_comparison" :key="`signal-comparison-${item.key}`">
+                <td>
+                  <strong>{{ item.label }}</strong>
+                </td>
+                <td>{{ formatCount(item.pre_401_count) }}</td>
+                <td>{{ formatPercent(item.pre_401_rate) }}</td>
+                <td>{{ formatCount(item.current_count) }}</td>
+                <td>{{ formatPercent(item.current_rate) }}</td>
+                <td>{{ formatPercent(item.rate_gap) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
 
       <div class="panel-grid research-band-grid">
         <article class="panel chart-panel">

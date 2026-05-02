@@ -16,6 +16,7 @@ from app.schemas.research import (
     ResearchOverviewResponse,
     ResearchOverviewSummary,
     ResearchPre401Insights,
+    ResearchSignalComparisonItem,
 )
 
 
@@ -60,6 +61,10 @@ def get_research_overview_api(
         event_hour_distribution=[
             ResearchHourlyDistributionPoint.model_validate(item)
             for item in overview.event_hour_distribution
+        ],
+        signal_comparison=[
+            ResearchSignalComparisonItem.model_validate(item)
+            for item in overview.signal_comparison
         ],
         pre_401_insights=ResearchPre401Insights(
             sampled_events=overview.pre_401_insights.sampled_events,
