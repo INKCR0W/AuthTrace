@@ -50,7 +50,9 @@ const filters = reactive({
   provider: "",
   accountType: "",
   currentSignalKey: "",
+  currentSignalPatternKey: "",
   pre401SignalKey: "",
+  pre401SignalPatternKey: "",
   currentMatchLevel: "",
   currentSignalMinStreak: "",
 });
@@ -78,7 +80,9 @@ const gapBandValues = computed(
 const normalizedProvider = computed(() => filters.provider.trim());
 const normalizedAccountType = computed(() => filters.accountType.trim());
 const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim());
+const normalizedCurrentSignalPatternKey = computed(() => filters.currentSignalPatternKey.trim());
 const normalizedPre401SignalKey = computed(() => filters.pre401SignalKey.trim());
+const normalizedPre401SignalPatternKey = computed(() => filters.pre401SignalPatternKey.trim());
 const normalizedCurrentMatchLevel = computed(() => filters.currentMatchLevel.trim());
 const normalizedCurrentSignalMinStreak = computed(() => filters.currentSignalMinStreak.trim());
 const selectedCurrentSignalLabel = computed(() => {
@@ -92,6 +96,61 @@ const selectedPre401SignalLabel = computed(() => {
     return "";
   }
   return currentSignalLabelMap[normalizedPre401SignalKey.value] ?? normalizedPre401SignalKey.value;
+});
+function formatPatternLabel(patternKey: string) {
+  return patternKey
+    .split("|")
+    .filter(Boolean)
+    .map((part) => currentSignalLabelMap[part] ?? part)
+    .join(" / ");
+}
+
+function buildPatternOptions(items: ResearchBucketCount[], selectedKey: string) {
+  if (!selectedKey) {
+    return items;
+  }
+  if (items.some((item) => item.key === selectedKey)) {
+    return items;
+  }
+  return [
+    {
+      key: selectedKey,
+      label: formatPatternLabel(selectedKey),
+      count: 0,
+    },
+    ...items,
+  ];
+}
+
+const currentSignalPatternOptions = computed(() =>
+  buildPatternOptions(
+    overview.value?.current_signal_baseline.signal_pattern_breakdown ?? [],
+    normalizedCurrentSignalPatternKey.value,
+  ),
+);
+const pre401SignalPatternOptions = computed(() =>
+  buildPatternOptions(
+    overview.value?.pre_401_insights.signal_pattern_breakdown ?? [],
+    normalizedPre401SignalPatternKey.value,
+  ),
+);
+const selectedCurrentSignalPatternLabel = computed(() => {
+  if (!normalizedCurrentSignalPatternKey.value) {
+    return "";
+  }
+  const matched = currentSignalPatternOptions.value.find(
+    (item) => item.key === normalizedCurrentSignalPatternKey.value,
+  );
+  return matched?.label ?? formatPatternLabel(normalizedCurrentSignalPatternKey.value);
+});
+const selectedPre401SignalPatternLabel = computed(() => {
+  if (!normalizedPre401SignalPatternKey.value) {
+    return "";
+  }
+  const matched = pre401SignalPatternOptions.value.find(
+    (item) => item.key === normalizedPre401SignalPatternKey.value,
+  );
+  return matched?.label ?? formatPatternLabel(normalizedPre401SignalPatternKey.value);
 });
 const selectedCurrentMatchLabel = computed(() => {
   if (!normalizedCurrentMatchLevel.value) {
@@ -111,7 +170,9 @@ const hasScopedFilters = computed(
       normalizedProvider.value ||
         normalizedAccountType.value ||
         normalizedCurrentSignalKey.value ||
+        normalizedCurrentSignalPatternKey.value ||
         normalizedPre401SignalKey.value ||
+        normalizedPre401SignalPatternKey.value ||
         normalizedCurrentMatchLevel.value ||
         normalizedCurrentSignalMinStreak.value,
     ),
@@ -128,8 +189,14 @@ const scopeSummary = computed(() => {
   if (selectedCurrentSignalLabel.value) {
     segments.push(`当前信号=${selectedCurrentSignalLabel.value}`);
   }
+  if (selectedCurrentSignalPatternLabel.value) {
+    segments.push(`当前模式=${selectedCurrentSignalPatternLabel.value}`);
+  }
   if (selectedPre401SignalLabel.value) {
     segments.push(`前序信号=${selectedPre401SignalLabel.value}`);
+  }
+  if (selectedPre401SignalPatternLabel.value) {
+    segments.push(`前序模式=${selectedPre401SignalPatternLabel.value}`);
   }
   if (selectedCurrentMatchLabel.value) {
     segments.push(`历史贴近=${selectedCurrentMatchLabel.value}`);
@@ -142,13 +209,20 @@ const scopeSummary = computed(() => {
 });
 const currentSignalScopeHint = computed(() => {
   if (!selectedCurrentSignalLabel.value) {
-    if (!selectedCurrentMatchLabel.value && !selectedCurrentSignalMinStreakLabel.value) {
+    if (
+      !selectedCurrentSignalPatternLabel.value &&
+      !selectedCurrentMatchLabel.value &&
+      !selectedCurrentSignalMinStreakLabel.value
+    ) {
       return "";
     }
   }
   const segments: string[] = [];
   if (selectedCurrentSignalLabel.value) {
     segments.push(`当前信号“${selectedCurrentSignalLabel.value}”`);
+  }
+  if (selectedCurrentSignalPatternLabel.value) {
+    segments.push(`当前模式“${selectedCurrentSignalPatternLabel.value}”`);
   }
   if (selectedCurrentMatchLabel.value) {
     segments.push(`历史贴近度“${selectedCurrentMatchLabel.value}”`);
@@ -253,7 +327,9 @@ async function loadOverview() {
       provider: normalizedProvider.value || undefined,
       account_type: normalizedAccountType.value || undefined,
       current_signal_key: normalizedCurrentSignalKey.value || undefined,
+      current_signal_pattern_key: normalizedCurrentSignalPatternKey.value || undefined,
       pre_401_signal_key: normalizedPre401SignalKey.value || undefined,
+      pre_401_signal_pattern_key: normalizedPre401SignalPatternKey.value || undefined,
       current_match_level: normalizedCurrentMatchLevel.value || undefined,
       current_signal_min_streak: normalizedCurrentSignalMinStreak.value
         ? Number(normalizedCurrentSignalMinStreak.value)
@@ -270,7 +346,9 @@ function resetFilters() {
   filters.provider = "";
   filters.accountType = "";
   filters.currentSignalKey = "";
+  filters.currentSignalPatternKey = "";
   filters.pre401SignalKey = "";
+  filters.pre401SignalPatternKey = "";
   filters.currentMatchLevel = "";
   filters.currentSignalMinStreak = "";
   void loadOverview();
@@ -391,10 +469,28 @@ onMounted(() => {
           </select>
         </label>
         <label>
+          <span class="subtle-label">当前模式</span>
+          <select v-model="filters.currentSignalPatternKey" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部组合</option>
+            <option v-for="item in currentSignalPatternOptions" :key="`current-pattern-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">前序信号</span>
           <select v-model="filters.pre401SignalKey" class="input-field compact-select" @change="loadOverview">
             <option value="">全部信号</option>
             <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="`pre-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span class="subtle-label">前序模式</span>
+          <select v-model="filters.pre401SignalPatternKey" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部组合</option>
+            <option v-for="item in pre401SignalPatternOptions" :key="`pre-pattern-${item.key}`" :value="item.key">
               {{ item.label }}
             </option>
           </select>
@@ -431,17 +527,25 @@ onMounted(() => {
     </div>
 
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
-    <p v-if="selectedCurrentSignalLabel" class="subtle-line">
-      “当前信号”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
+    <p v-if="selectedCurrentSignalLabel || selectedCurrentSignalPatternLabel" class="subtle-line">
+      “当前信号 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
     </p>
     <p v-if="selectedCurrentMatchLabel || selectedCurrentSignalMinStreakLabel" class="subtle-line">
       “历史贴近 / 连续轮数”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
     </p>
-    <p v-if="selectedPre401SignalLabel" class="subtle-line">
-      “前序信号”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
+    <p v-if="selectedPre401SignalLabel || selectedPre401SignalPatternLabel" class="subtle-line">
+      “前序信号 / 前序模式”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
     </p>
-    <p v-if="selectedCurrentSignalLabel || selectedPre401SignalLabel" class="subtle-line">
-      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 前序信号”下拉局部收窄，便于稳定比较历史样本与当前基线。
+    <p
+      v-if="
+        selectedCurrentSignalLabel ||
+        selectedCurrentSignalPatternLabel ||
+        selectedPre401SignalLabel ||
+        selectedPre401SignalPatternLabel
+      "
+      class="subtle-line"
+    >
+      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前模式 / 前序信号 / 前序模式”局部收窄，便于稳定比较历史样本与当前基线。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>

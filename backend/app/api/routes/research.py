@@ -8,6 +8,7 @@ from app.repositories.research import (
     RESEARCH_HISTORICAL_MATCH_LEVELS,
     RESEARCH_SIGNAL_KEYS,
     get_research_overview,
+    normalize_research_signal_pattern_key,
 )
 from app.schemas.research import (
     ResearchBucketCount,
@@ -35,7 +36,9 @@ def get_research_overview_api(
     provider: str | None = Query(default=None),
     account_type: str | None = Query(default=None),
     current_signal_key: str | None = Query(default=None),
+    current_signal_pattern_key: str | None = Query(default=None),
     pre_401_signal_key: str | None = Query(default=None),
+    pre_401_signal_pattern_key: str | None = Query(default=None),
     current_match_level: str | None = Query(default=None),
     current_signal_min_streak: int | None = Query(default=None, ge=1, le=20),
 ) -> ResearchOverviewResponse:
@@ -49,6 +52,22 @@ def get_research_overview_api(
             status_code=422,
             detail=f"Unsupported pre_401_signal_key: {pre_401_signal_key}",
         )
+    if current_signal_pattern_key is not None:
+        try:
+            current_signal_pattern_key = normalize_research_signal_pattern_key(current_signal_pattern_key)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported current_signal_pattern_key: {current_signal_pattern_key}",
+            ) from exc
+    if pre_401_signal_pattern_key is not None:
+        try:
+            pre_401_signal_pattern_key = normalize_research_signal_pattern_key(pre_401_signal_pattern_key)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported pre_401_signal_pattern_key: {pre_401_signal_pattern_key}",
+            ) from exc
     if current_match_level is not None and current_match_level not in RESEARCH_HISTORICAL_MATCH_LEVELS:
         raise HTTPException(
             status_code=422,
@@ -61,7 +80,9 @@ def get_research_overview_api(
         provider=provider,
         account_type=account_type,
         current_signal_key=current_signal_key,
+        current_signal_pattern_key=current_signal_pattern_key,
         pre_401_signal_key=pre_401_signal_key,
+        pre_401_signal_pattern_key=pre_401_signal_pattern_key,
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
     )

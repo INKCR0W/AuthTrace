@@ -1383,6 +1383,118 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
     app.dependency_overrides.clear()
 
 
+def test_research_overview_api_applies_current_signal_pattern_key_filter() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        db.add_all(
+            [
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-short",
+                    name="Short-Signal",
+                    provider="azure",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_short_used_percent=Decimal("92.00"),
+                    current_limit_reached=True,
+                    status_message="burst window",
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=2),
+                    last_seen_at=base_time,
+                ),
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-weekly",
+                    name="Weekly-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_weekly_used_percent=Decimal("96.00"),
+                    current_limit_reached=True,
+                    current_allowed=False,
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=2),
+                    last_seen_at=base_time,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&current_signal_pattern_key=status_message_present|short_ge_90|limit_reached",
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    baseline = payload["current_signal_baseline"]
+    assert baseline["observed_accounts"] == 2
+    assert baseline["signal_accounts"] == 1
+    assert {item["key"]: item["count"] for item in baseline["signal_breakdown"]} == {
+        "limit_reached": 1,
+        "short_ge_90": 1,
+        "status_message_present": 1,
+    }
+    assert baseline["signal_pattern_breakdown"] == [
+        {
+            "key": "short_ge_90|limit_reached|status_message_present",
+            "label": "短周期 >= 90% / limit_reached=true / 存在 status_message",
+            "count": 1,
+        }
+    ]
+    assert baseline["current_signal_group_breakdown"] == [
+        {
+            "label": "azure / chatgpt",
+            "provider": "azure",
+            "account_type": "chatgpt",
+            "observed_accounts": 1,
+            "signal_accounts": 1,
+            "signal_rate": 100.0,
+            "multi_round_signal_accounts": 0,
+            "historical_like_accounts": 0,
+            "historical_like_rate": 0.0,
+            "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
+            "top_historical_like_samples": [],
+        }
+    ]
+    assert [item["account_name"] for item in baseline["recent_samples"]] == ["Short-Signal"]
+
+    app.dependency_overrides.clear()
+
+
 def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
     session_factory = _create_session_factory()
 
@@ -1630,6 +1742,172 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
         "weekly_ge_90|limit_reached|allowed_false": (0, 0.0, 1, 100.0, -100.0),
     }
     assert payload["current_signal_baseline"]["signal_accounts"] == 1
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_applies_pre_401_signal_pattern_key_filter() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=3),
+            scan_finished_at=base_time - timedelta(hours=3) + timedelta(minutes=3),
+            total_accounts=2,
+            eligible_accounts=2,
+            scanned_accounts=2,
+            success_accounts=2,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        allowed_false_hot = Account(
+            source_id=source.id,
+            auth_index="auth-allowed-false",
+            name="AllowedFalse-Hot",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=3),
+            last_seen_at=base_time,
+        )
+        short_hot = Account(
+            source_id=source.id,
+            auth_index="auth-short-hot",
+            name="Short-Hot",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=3),
+            last_seen_at=base_time,
+        )
+        db.add_all([allowed_false_hot, short_hot])
+        db.flush()
+
+        allowed_false_snapshot = AccountSnapshot(
+            account_id=allowed_false_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=1, minutes=5),
+            created_at=base_time - timedelta(hours=1, minutes=5),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            short_used_percent=Decimal("88.00"),
+            remaining=Decimal("2.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="soft_block",
+        )
+        short_snapshot = AccountSnapshot(
+            account_id=short_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=2, minutes=5),
+            created_at=base_time - timedelta(hours=2, minutes=5),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("50.00"),
+            short_used_percent=Decimal("91.00"),
+            remaining=Decimal("0.00"),
+            limit_reached=False,
+            allowed=True,
+            status_message=None,
+        )
+        db.add_all([allowed_false_snapshot, short_snapshot])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=allowed_false_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=1),
+                    related_snapshot_id=allowed_false_snapshot.id,
+                    previous_snapshot_id=allowed_false_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=1),
+                ),
+                AccountEvent(
+                    account_id=short_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=2),
+                    related_snapshot_id=short_snapshot.id,
+                    previous_snapshot_id=short_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=2),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&pre_401_signal_pattern_key=allowed_false|status_message_present|limit_reached|weekly_ge_90",
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["became_401_events"] == 2
+    assert payload["pre_401_insights"]["sampled_events"] == 1
+    assert payload["pre_401_insights"]["events_with_previous_snapshot"] == 1
+    assert payload["pre_401_insights"]["signal_pattern_breakdown"] == [
+        {
+            "key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
+            "label": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "count": 1,
+        }
+    ]
+    assert [item["event_id"] for item in payload["recent_event_samples"]] == [1]
 
     app.dependency_overrides.clear()
 
@@ -2466,6 +2744,41 @@ def test_research_overview_api_rejects_unknown_current_signal_key() -> None:
     app.dependency_overrides.clear()
 
 
+def test_research_overview_api_rejects_unknown_current_signal_pattern_key() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&current_signal_pattern_key=unknown_signal|limit_reached",
+        )
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Unsupported current_signal_pattern_key: unknown_signal|limit_reached"
+    )
+
+    app.dependency_overrides.clear()
+
+
 def test_research_overview_api_rejects_unknown_current_match_level() -> None:
     session_factory = _create_session_factory()
 
@@ -2520,6 +2833,41 @@ def test_research_overview_api_rejects_unknown_pre_401_signal_key() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Unsupported pre_401_signal_key: unknown_signal"
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_rejects_unknown_pre_401_signal_pattern_key() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&pre_401_signal_pattern_key=weekly_ge_90|weekly_ge_90",
+        )
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Unsupported pre_401_signal_pattern_key: weekly_ge_90|weekly_ge_90"
+    )
 
     app.dependency_overrides.clear()
 

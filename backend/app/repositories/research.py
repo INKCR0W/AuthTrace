@@ -195,7 +195,9 @@ class ResearchOverviewFilters:
     provider: str | None = None
     account_type: str | None = None
     current_signal_key: str | None = None
+    current_signal_pattern_key: str | None = None
     pre_401_signal_key: str | None = None
+    pre_401_signal_pattern_key: str | None = None
     current_match_level: str | None = None
     current_signal_min_streak: int | None = None
 
@@ -207,7 +209,9 @@ def get_research_overview(
     provider: str | None = None,
     account_type: str | None = None,
     current_signal_key: str | None = None,
+    current_signal_pattern_key: str | None = None,
     pre_401_signal_key: str | None = None,
+    pre_401_signal_pattern_key: str | None = None,
     current_match_level: str | None = None,
     current_signal_min_streak: int | None = None,
 ) -> ResearchOverview:
@@ -217,7 +221,9 @@ def get_research_overview(
         provider=provider,
         account_type=account_type,
         current_signal_key=current_signal_key,
+        current_signal_pattern_key=current_signal_pattern_key,
         pre_401_signal_key=pre_401_signal_key,
+        pre_401_signal_pattern_key=pre_401_signal_pattern_key,
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
     )
@@ -241,6 +247,7 @@ def get_research_overview(
     pre_401_event_rows = _filter_event_rows_by_previous_signal(
         event_rows,
         signal_key=filters.pre_401_signal_key,
+        pattern_key=filters.pre_401_signal_pattern_key,
     )
 
     active_accounts = int(
@@ -317,15 +324,24 @@ def _filter_event_rows_by_previous_signal(
     event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
     *,
     signal_key: str | None,
+    pattern_key: str | None,
 ) -> list[tuple[AccountEvent, Account, AccountSnapshot | None]]:
-    if signal_key is None:
+    if signal_key is None and pattern_key is None:
         return event_rows
 
-    return [
-        row
-        for row in event_rows
-        if row[2] is not None and signal_key in _extract_snapshot_signal_keys(row[2])
-    ]
+    filtered_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]] = []
+    for row in event_rows:
+        previous_snapshot = row[2]
+        if previous_snapshot is None:
+            continue
+        signal_keys = _extract_snapshot_signal_keys(previous_snapshot)
+        if signal_key is not None and signal_key not in signal_keys:
+            continue
+        if pattern_key is not None and "|".join(signal_keys) != pattern_key:
+            continue
+        filtered_rows.append(row)
+
+    return filtered_rows
 
 
 def _build_provider_account_type_breakdown(
@@ -693,6 +709,8 @@ def _build_current_signal_baseline(
             continue
 
         pattern_key = "|".join(signal_keys)
+        if filters.current_signal_pattern_key and filters.current_signal_pattern_key != pattern_key:
+            continue
         signal_candidates.append((account, signal_keys, pattern_key))
 
     snapshots_by_account_id = _load_success_snapshots_by_account_id(
@@ -1010,6 +1028,21 @@ def _build_top_status_messages(counter: Counter[str]) -> list[ResearchBucketCoun
 
 def _build_signal_pattern_label(pattern: str) -> str:
     return " / ".join(_SIGNAL_LABELS[key] for key in pattern.split("|") if key in _SIGNAL_LABELS)
+
+
+def normalize_research_signal_pattern_key(pattern: str) -> str:
+    parts = [part.strip() for part in pattern.split("|") if part.strip()]
+    if not parts or len(parts) != len(set(parts)):
+        raise ValueError(pattern)
+
+    if any(part not in _SIGNAL_LABELS for part in parts):
+        raise ValueError(pattern)
+
+    normalized_parts = [key for key in RESEARCH_SIGNAL_KEYS if key in parts]
+    if not normalized_parts:
+        raise ValueError(pattern)
+
+    return "|".join(normalized_parts)
 
 
 def _pick_top_signal_pattern(counter: Counter[str]) -> str | None:
