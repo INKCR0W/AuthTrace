@@ -43,6 +43,7 @@ def get_research_overview_api(
     pre_401_gap_bucket: str | None = Query(default=None),
     current_match_level: str | None = Query(default=None),
     current_signal_min_streak: int | None = Query(default=None, ge=1, le=20),
+    current_historical_gap_bucket: str | None = Query(default=None),
 ) -> ResearchOverviewResponse:
     if current_signal_key is not None and current_signal_key not in RESEARCH_SIGNAL_KEYS:
         raise HTTPException(
@@ -80,6 +81,14 @@ def get_research_overview_api(
             status_code=422,
             detail=f"Unsupported current_match_level: {current_match_level}",
         )
+    if (
+        current_historical_gap_bucket is not None
+        and current_historical_gap_bucket not in RESEARCH_PRE_401_GAP_BUCKET_KEYS
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported current_historical_gap_bucket: {current_historical_gap_bucket}",
+        )
 
     overview = get_research_overview(
         db,
@@ -93,6 +102,7 @@ def get_research_overview_api(
         pre_401_gap_bucket=pre_401_gap_bucket,
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
+        current_historical_gap_bucket=current_historical_gap_bucket,
     )
     return ResearchOverviewResponse(
         window_days=overview.window_days,
@@ -163,6 +173,10 @@ def get_research_overview_api(
             historical_match_breakdown=[
                 ResearchBucketCount.model_validate(item)
                 for item in overview.current_signal_baseline.historical_match_breakdown
+            ],
+            historical_match_gap_breakdown=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.current_signal_baseline.historical_match_gap_breakdown
             ],
             current_signal_group_breakdown=[
                 ResearchCurrentSignalGroupBreakdownItem.model_validate(item)

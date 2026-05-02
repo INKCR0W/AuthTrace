@@ -141,6 +141,9 @@ export interface ResearchCurrentSignalSample {
   historical_match_event_account_id: number | null;
   historical_match_event_account_name: string | null;
   historical_match_event_time: string | null;
+  historical_match_gap_bucket: string | null;
+  historical_match_gap_label: string | null;
+  historical_match_gap_minutes: number | null;
 }
 
 export interface ResearchCurrentSignalGroupSample {
@@ -160,6 +163,9 @@ export interface ResearchCurrentSignalGroupSample {
   historical_match_event_account_id: number | null;
   historical_match_event_account_name: string | null;
   historical_match_event_time: string | null;
+  historical_match_gap_bucket: string | null;
+  historical_match_gap_label: string | null;
+  historical_match_gap_minutes: number | null;
 }
 
 export interface ResearchCurrentSignalGroupBreakdownItem {
@@ -184,6 +190,7 @@ export interface ResearchCurrentSignalBaseline {
   signal_pattern_breakdown: ResearchBucketCount[];
   signal_streak_breakdown: ResearchBucketCount[];
   historical_match_breakdown: ResearchBucketCount[];
+  historical_match_gap_breakdown: ResearchBucketCount[];
   current_signal_group_breakdown: ResearchCurrentSignalGroupBreakdownItem[];
   top_status_messages: ResearchBucketCount[];
   recent_samples: ResearchCurrentSignalSample[];

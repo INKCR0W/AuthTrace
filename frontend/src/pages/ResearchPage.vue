@@ -76,6 +76,7 @@ const filters = reactive({
   pre401GapBucket: "",
   currentMatchLevel: "",
   currentSignalMinStreak: "",
+  currentHistoricalGapBucket: "",
 });
 
 interface ResearchRouteState {
@@ -89,6 +90,7 @@ interface ResearchRouteState {
   pre401GapBucket: string;
   currentMatchLevel: string;
   currentSignalMinStreak: string;
+  currentHistoricalGapBucket: string;
 }
 
 const researchRouteQueryKeys = [
@@ -102,6 +104,7 @@ const researchRouteQueryKeys = [
   "pre_401_gap_bucket",
   "current_match_level",
   "current_signal_min_streak",
+  "current_historical_gap_bucket",
 ] as const;
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
@@ -133,6 +136,7 @@ const normalizedPre401SignalPatternKey = computed(() => filters.pre401SignalPatt
 const normalizedPre401GapBucket = computed(() => filters.pre401GapBucket.trim());
 const normalizedCurrentMatchLevel = computed(() => filters.currentMatchLevel.trim());
 const normalizedCurrentSignalMinStreak = computed(() => filters.currentSignalMinStreak.trim());
+const normalizedCurrentHistoricalGapBucket = computed(() => filters.currentHistoricalGapBucket.trim());
 const selectedCurrentSignalLabel = computed(() => {
   if (!normalizedCurrentSignalKey.value) {
     return "";
@@ -218,6 +222,12 @@ const selectedCurrentSignalMinStreakLabel = computed(() => {
   }
   return `连续至少 ${normalizedCurrentSignalMinStreak.value} 轮`;
 });
+const selectedCurrentHistoricalGapBucketLabel = computed(() => {
+  if (!normalizedCurrentHistoricalGapBucket.value) {
+    return "";
+  }
+  return pre401GapLabelMap[normalizedCurrentHistoricalGapBucket.value] ?? normalizedCurrentHistoricalGapBucket.value;
+});
 const hasScopedFilters = computed(
   () =>
     Boolean(
@@ -229,7 +239,8 @@ const hasScopedFilters = computed(
         normalizedPre401SignalPatternKey.value ||
         normalizedPre401GapBucket.value ||
         normalizedCurrentMatchLevel.value ||
-        normalizedCurrentSignalMinStreak.value,
+        normalizedCurrentSignalMinStreak.value ||
+        normalizedCurrentHistoricalGapBucket.value,
     ),
 );
 const scopeSummary = computed(() => {
@@ -262,6 +273,9 @@ const scopeSummary = computed(() => {
   if (selectedCurrentSignalMinStreakLabel.value) {
     segments.push(selectedCurrentSignalMinStreakLabel.value);
   }
+  if (selectedCurrentHistoricalGapBucketLabel.value) {
+    segments.push(`最佳历史证据=${selectedCurrentHistoricalGapBucketLabel.value}`);
+  }
 
   return segments.length ? segments.join(" / ") : "全部账号";
 });
@@ -270,7 +284,8 @@ const currentSignalScopeHint = computed(() => {
     if (
       !selectedCurrentSignalPatternLabel.value &&
       !selectedCurrentMatchLabel.value &&
-      !selectedCurrentSignalMinStreakLabel.value
+      !selectedCurrentSignalMinStreakLabel.value &&
+      !selectedCurrentHistoricalGapBucketLabel.value
     ) {
       return "";
     }
@@ -287,6 +302,9 @@ const currentSignalScopeHint = computed(() => {
   }
   if (selectedCurrentSignalMinStreakLabel.value) {
     segments.push(selectedCurrentSignalMinStreakLabel.value);
+  }
+  if (selectedCurrentHistoricalGapBucketLabel.value) {
+    segments.push(`最佳历史证据“${selectedCurrentHistoricalGapBucketLabel.value}”`);
   }
   return `当前基线已按${segments.join(" + ")}收窄；下方仍会继续展示这些样本共现的其他信号，便于判断伴随模式。`;
 });
@@ -403,6 +421,9 @@ function syncFilters(next: Partial<typeof filters>) {
   if (next.currentSignalMinStreak !== undefined) {
     filters.currentSignalMinStreak = next.currentSignalMinStreak;
   }
+  if (next.currentHistoricalGapBucket !== undefined) {
+    filters.currentHistoricalGapBucket = next.currentHistoricalGapBucket;
+  }
 }
 
 function applyCurrentSignalFilter(signalKey: string) {
@@ -451,6 +472,13 @@ function applyCurrentMatchLevelFilter(matchLevel: string) {
   void loadOverview();
 }
 
+function applyCurrentHistoricalGapBucketFilter(gapBucket: string) {
+  syncFilters({
+    currentHistoricalGapBucket: gapBucket,
+  });
+  void loadOverview();
+}
+
 function applyScopeFilter(provider: string | null, accountType: string | null) {
   syncFilters({
     provider: provider ?? "",
@@ -481,6 +509,10 @@ function isPre401GapBucketFilterActive(gapBucket: string) {
 
 function isCurrentMatchLevelFilterActive(matchLevel: string) {
   return normalizedCurrentMatchLevel.value === matchLevel;
+}
+
+function isCurrentHistoricalGapBucketFilterActive(gapBucket: string) {
+  return normalizedCurrentHistoricalGapBucket.value === gapBucket;
 }
 
 function isScopeFilterActive(provider: string | null, accountType: string | null) {
@@ -554,6 +586,10 @@ function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
       normalizeQueryValue(query.current_signal_min_streak),
       allowedCurrentSignalMinStreaks,
     ),
+    currentHistoricalGapBucket: normalizeAllowedValue(
+      normalizeQueryValue(query.current_historical_gap_bucket),
+      allowedPre401GapKeys,
+    ),
   };
 }
 
@@ -569,6 +605,7 @@ function readCurrentRouteState(): ResearchRouteState {
     pre401GapBucket: normalizedPre401GapBucket.value,
     currentMatchLevel: normalizedCurrentMatchLevel.value,
     currentSignalMinStreak: normalizedCurrentSignalMinStreak.value,
+    currentHistoricalGapBucket: normalizedCurrentHistoricalGapBucket.value,
   };
 }
 
@@ -584,6 +621,7 @@ function applyRouteState(state: ResearchRouteState) {
     pre401GapBucket: state.pre401GapBucket,
     currentMatchLevel: state.currentMatchLevel,
     currentSignalMinStreak: state.currentSignalMinStreak,
+    currentHistoricalGapBucket: state.currentHistoricalGapBucket,
   });
 }
 
@@ -598,7 +636,8 @@ function areRouteStatesEqual(left: ResearchRouteState, right: ResearchRouteState
     left.pre401SignalPatternKey === right.pre401SignalPatternKey &&
     left.pre401GapBucket === right.pre401GapBucket &&
     left.currentMatchLevel === right.currentMatchLevel &&
-    left.currentSignalMinStreak === right.currentSignalMinStreak
+    left.currentSignalMinStreak === right.currentSignalMinStreak &&
+    left.currentHistoricalGapBucket === right.currentHistoricalGapBucket
   );
 }
 
@@ -634,6 +673,9 @@ function buildRouteQuery(state: ResearchRouteState): LocationQueryRaw {
   }
   if (state.currentSignalMinStreak) {
     query.current_signal_min_streak = state.currentSignalMinStreak;
+  }
+  if (state.currentHistoricalGapBucket) {
+    query.current_historical_gap_bucket = state.currentHistoricalGapBucket;
   }
 
   return query;
@@ -683,6 +725,7 @@ async function loadOverview(options?: { syncRoute?: boolean }) {
       current_signal_min_streak: normalizedCurrentSignalMinStreak.value
         ? Number(normalizedCurrentSignalMinStreak.value)
         : undefined,
+      current_historical_gap_bucket: normalizedCurrentHistoricalGapBucket.value || undefined,
     });
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : "加载研究数据失败";
@@ -701,6 +744,7 @@ function resetFilters() {
   filters.pre401GapBucket = "";
   filters.currentMatchLevel = "";
   filters.currentSignalMinStreak = "";
+  filters.currentHistoricalGapBucket = "";
   void loadOverview();
 }
 
@@ -759,11 +803,16 @@ function currentSignalPersistenceSummary(item: ResearchCurrentSignalSample) {
 
 function currentSignalHistoricalMatchSummary(item: ResearchCurrentSignalSample) {
   const coverage = `${item.historical_match_label}（覆盖率 ${formatPercent(item.historical_match_rate)}）`;
-  if (!item.historical_best_pattern) {
-    return coverage;
+  const segments = [coverage];
+
+  if (item.historical_match_gap_label) {
+    segments.push(`最佳历史证据 ${item.historical_match_gap_label}`);
+  }
+  if (item.historical_best_pattern) {
+    segments.push(`最接近历史模式：${item.historical_best_pattern}`);
   }
 
-  return `${coverage}，最接近历史模式：${item.historical_best_pattern}`;
+  return segments.join("，");
 }
 
 function currentSignalHistoricalDeltaSummary(item: ResearchCurrentSignalSample | ResearchCurrentSignalGroupSample) {
@@ -787,11 +836,22 @@ function currentSignalHistoricalReplaySummary(item: ResearchCurrentSignalSample 
     return "";
   }
 
-  return `历史样本：${item.historical_match_event_account_name} · ${formatDateTime(item.historical_match_event_time)}`;
+  const segments = [
+    `历史样本：${item.historical_match_event_account_name}`,
+    formatDateTime(item.historical_match_event_time),
+  ];
+  if (item.historical_match_gap_label) {
+    segments.push(`前序 ${item.historical_match_gap_label}`);
+  }
+  return segments.join(" · ");
 }
 
 function currentGroupHistoricalLikeSummary(item: ResearchCurrentSignalGroupSample) {
-  return `${item.historical_match_label} / 连续 ${formatCount(item.consecutive_signal_snapshots)} 轮`;
+  const segments = [item.historical_match_label, `连续 ${formatCount(item.consecutive_signal_snapshots)} 轮`];
+  if (item.historical_match_gap_label) {
+    segments.push(`前序 ${item.historical_match_gap_label}`);
+  }
+  return segments.join(" / ");
 }
 
 watch(
@@ -908,6 +968,19 @@ watch(
           </select>
         </label>
         <label>
+          <span class="subtle-label">最佳历史证据</span>
+          <select
+            v-model="filters.currentHistoricalGapBucket"
+            class="input-field compact-select"
+            @change="loadOverview"
+          >
+            <option value="">全部区间</option>
+            <option v-for="item in PRE_401_GAP_OPTIONS" :key="`current-gap-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">窗口</span>
           <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
             <option :value="7">最近 7 天</option>
@@ -925,8 +998,11 @@ watch(
     <p v-if="selectedCurrentSignalLabel || selectedCurrentSignalPatternLabel" class="subtle-line">
       “当前信号 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
     </p>
-    <p v-if="selectedCurrentMatchLabel || selectedCurrentSignalMinStreakLabel" class="subtle-line">
-      “历史贴近 / 连续轮数”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
+    <p
+      v-if="selectedCurrentMatchLabel || selectedCurrentSignalMinStreakLabel || selectedCurrentHistoricalGapBucketLabel"
+      class="subtle-line"
+    >
+      “历史贴近 / 连续轮数 / 最佳历史证据”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
     </p>
     <p v-if="selectedPre401SignalLabel || selectedPre401SignalPatternLabel" class="subtle-line">
       “前序信号 / 前序模式”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
@@ -1141,6 +1217,30 @@ watch(
                 @click="applyCurrentMatchLevelFilter(item.key)"
               >
                 {{ isCurrentMatchLevelFilterActive(item.key) ? "已筛到贴近度" : "筛到贴近度" }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="overview.current_signal_baseline.historical_match_gap_breakdown.some((item) => item.count > 0)"
+            class="observation-list"
+          >
+            <p class="subtle-label">最佳历史证据新鲜度</p>
+            <div
+              v-for="item in overview.current_signal_baseline.historical_match_gap_breakdown.filter((entry) => entry.count > 0)"
+              :key="`historical-gap-${item.key}`"
+              class="observation-item observation-item-action"
+            >
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 个账号</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentHistoricalGapBucketFilterActive(item.key)"
+                @click="applyCurrentHistoricalGapBucketFilter(item.key)"
+              >
+                {{
+                  isCurrentHistoricalGapBucketFilterActive(item.key) ? "已筛到最佳历史证据" : "筛到最佳历史证据"
+                }}
               </button>
             </div>
           </div>

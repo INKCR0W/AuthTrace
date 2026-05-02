@@ -132,6 +132,9 @@ class ResearchCurrentSignalSample(BaseModel):
     historical_match_event_account_id: int | None = None
     historical_match_event_account_name: str | None = None
     historical_match_event_time: datetime | None = None
+    historical_match_gap_bucket: str | None = None
+    historical_match_gap_label: str | None = None
+    historical_match_gap_minutes: int | None = None
 
 
 class ResearchCurrentSignalGroupSample(BaseModel):
@@ -153,6 +156,9 @@ class ResearchCurrentSignalGroupSample(BaseModel):
     historical_match_event_account_id: int | None = None
     historical_match_event_account_name: str | None = None
     historical_match_event_time: datetime | None = None
+    historical_match_gap_bucket: str | None = None
+    historical_match_gap_label: str | None = None
+    historical_match_gap_minutes: int | None = None
 
 
 class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
@@ -179,6 +185,7 @@ class ResearchCurrentSignalBaseline(BaseModel):
     signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_match_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    historical_match_gap_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem] = Field(default_factory=list)
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
     recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)
