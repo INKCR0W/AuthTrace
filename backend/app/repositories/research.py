@@ -60,6 +60,7 @@ class ResearchPre401Insights:
     weekly_used_percent_bands: list[ResearchBucketCount]
     short_used_percent_bands: list[ResearchBucketCount]
     signal_breakdown: list[ResearchBucketCount]
+    signal_pattern_breakdown: list[ResearchBucketCount]
     top_status_messages: list[ResearchBucketCount]
 
 
@@ -345,25 +346,20 @@ def _build_pre_401_insights(
     weekly_counter = Counter(_bucket_percent(snapshot.weekly_used_percent) for snapshot in previous_snapshots)
     short_counter = Counter(_bucket_percent(snapshot.short_used_percent) for snapshot in previous_snapshots)
     signal_counter = Counter[str]()
+    pattern_counter = Counter[str]()
     status_counter = Counter[str]()
 
     for event, _, snapshot in event_rows:
         if snapshot is None:
             continue
         previous_gap_counter[_bucket_previous_gap(event_time=event.event_time, previous_checked_at=snapshot.checked_at)] += 1
-        if _decimal_gte(snapshot.weekly_used_percent, Decimal("90")):
-            signal_counter["weekly_ge_90"] += 1
-        if _decimal_gte(snapshot.short_used_percent, Decimal("90")):
-            signal_counter["short_ge_90"] += 1
-        if snapshot.limit_reached is True:
-            signal_counter["limit_reached"] += 1
-        if snapshot.allowed is False:
-            signal_counter["allowed_false"] += 1
-        if snapshot.remaining is not None and snapshot.remaining <= 0:
-            signal_counter["remaining_empty"] += 1
-        if (snapshot.status_message or "").strip():
-            signal_counter["status_message_present"] += 1
-            status_counter[snapshot.status_message.strip()] += 1
+        signal_keys = _extract_snapshot_signal_keys(snapshot)
+        signal_counter.update(signal_keys)
+        if signal_keys:
+            pattern_counter["|".join(signal_keys)] += 1
+        status_message_excerpt = _build_status_message_excerpt(snapshot.status_message)
+        if status_message_excerpt:
+            status_counter[status_message_excerpt] += 1
 
     return ResearchPre401Insights(
         sampled_events=len(event_rows),
@@ -372,6 +368,7 @@ def _build_pre_401_insights(
         weekly_used_percent_bands=_build_percent_band_counts(weekly_counter),
         short_used_percent_bands=_build_percent_band_counts(short_counter),
         signal_breakdown=_build_signal_breakdown(signal_counter),
+        signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
         top_status_messages=_build_top_status_messages(status_counter),
     )
 
@@ -417,7 +414,7 @@ def _build_recent_event_samples(
             ),
             previous_allowed=previous_snapshot.allowed if previous_snapshot is not None else None,
             previous_status_message=(
-                previous_snapshot.status_message
+                _build_status_message_excerpt(previous_snapshot.status_message)
                 if previous_snapshot is not None
                 else None
             ),

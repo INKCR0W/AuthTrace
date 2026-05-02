@@ -91,6 +91,7 @@ export interface ResearchPre401Insights {
   weekly_used_percent_bands: ResearchBucketCount[];
   short_used_percent_bands: ResearchBucketCount[];
   signal_breakdown: ResearchBucketCount[];
+  signal_pattern_breakdown: ResearchBucketCount[];
   top_status_messages: ResearchBucketCount[];
 }
 

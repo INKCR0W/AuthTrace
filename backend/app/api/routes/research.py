@@ -80,6 +80,10 @@ def get_research_overview_api(
                 ResearchBucketCount.model_validate(item)
                 for item in overview.pre_401_insights.signal_breakdown
             ],
+            signal_pattern_breakdown=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.pre_401_insights.signal_pattern_breakdown
+            ],
             top_status_messages=[
                 ResearchBucketCount.model_validate(item)
                 for item in overview.pre_401_insights.top_status_messages

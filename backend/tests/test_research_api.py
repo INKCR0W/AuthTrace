@@ -154,7 +154,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
             remaining=Decimal("4.00"),
             limit_reached=True,
             allowed=False,
-            status_message="soft_block",
+            status_message='{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}',
         )
         prev_azure_hot = AccountSnapshot(
             account_id=azure_hot.id,
@@ -323,8 +323,17 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "short_ge_90": 1,
         "weekly_ge_90": 1,
     }
+    assert {item["key"]: item["count"] for item in insights["signal_pattern_breakdown"]} == {
+        "status_message_present": 1,
+        "short_ge_90|remaining_empty": 1,
+        "weekly_ge_90|limit_reached|allowed_false|status_message_present": 1,
+    }
     assert insights["top_status_messages"] == [
-        {"key": "soft_block", "label": "soft_block", "count": 1},
+        {
+            "key": "usage_limit_reached: The usage limit has been reached",
+            "label": "usage_limit_reached: The usage limit has been reached",
+            "count": 1,
+        },
         {"key": "warmup", "label": "warmup", "count": 1},
     ]
 
@@ -346,7 +355,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "previous_remaining": "4.00",
         "previous_limit_reached": True,
         "previous_allowed": False,
-        "previous_status_message": "soft_block",
+        "previous_status_message": "usage_limit_reached: The usage limit has been reached",
     }
     assert recent_samples[2]["previous_status_message"] == "warmup"
     assert payload["current_signal_baseline"] == {
@@ -1447,6 +1456,13 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
         "status_message_present": 1,
         "weekly_ge_90": 1,
     }
+    assert payload["pre_401_insights"]["signal_pattern_breakdown"] == [
+        {
+            "key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
+            "label": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "count": 1,
+        }
+    ]
     assert payload["recent_event_samples"] == [
         {
             "event_id": 1,

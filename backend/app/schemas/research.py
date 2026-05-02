@@ -55,6 +55,7 @@ class ResearchPre401Insights(BaseModel):
     weekly_used_percent_bands: list[ResearchBucketCount] = Field(default_factory=list)
     short_used_percent_bands: list[ResearchBucketCount] = Field(default_factory=list)
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
 
 

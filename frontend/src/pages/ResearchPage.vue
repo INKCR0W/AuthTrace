@@ -109,6 +109,9 @@ const currentSignalScopeHint = computed(() => {
 const dominantCurrentSignalPattern = computed(
   () => overview.value?.current_signal_baseline.signal_pattern_breakdown[0] ?? null,
 );
+const dominantPre401SignalPattern = computed(
+  () => overview.value?.pre_401_insights.signal_pattern_breakdown[0] ?? null,
+);
 const dominantCurrentSignalPatternSummary = computed(() => {
   const baseline = overview.value?.current_signal_baseline;
   const dominantPattern = dominantCurrentSignalPattern.value;
@@ -118,6 +121,16 @@ const dominantCurrentSignalPatternSummary = computed(() => {
   }
 
   return `当前最常见的信号组合覆盖 ${formatCount(dominantPattern.count)} / ${formatCount(baseline.signal_accounts)} 个样本：${dominantPattern.label}`;
+});
+const dominantPre401SignalPatternSummary = computed(() => {
+  const insights = overview.value?.pre_401_insights;
+  const dominantPattern = dominantPre401SignalPattern.value;
+
+  if (!insights || !dominantPattern || insights.events_with_previous_snapshot === 0) {
+    return "";
+  }
+
+  return `历史 401 前最常见的信号组合覆盖 ${formatCount(dominantPattern.count)} / ${formatCount(insights.events_with_previous_snapshot)} 个可回放样本：${dominantPattern.label}`;
 });
 
 async function loadOverview() {
@@ -339,17 +352,36 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-if="overview.pre_401_insights.top_status_messages.length" class="observation-list">
-            <p class="subtle-label">高频 status_message</p>
+          <p v-if="dominantPre401SignalPatternSummary" class="subtle-line">
+            {{ dominantPre401SignalPatternSummary }}
+          </p>
+
+          <div
+            v-if="
+              overview.pre_401_insights.signal_pattern_breakdown.length ||
+              overview.pre_401_insights.top_status_messages.length
+            "
+            class="observation-list"
+          >
+            <p v-if="overview.pre_401_insights.signal_pattern_breakdown.length" class="subtle-label">高频前序信号组合</p>
+            <p
+              v-for="item in overview.pre_401_insights.signal_pattern_breakdown"
+              :key="`pre-pattern-${item.key}`"
+              class="observation-item"
+            >
+              {{ item.label }} · {{ formatCount(item.count) }} 次
+            </p>
+
+            <p v-if="overview.pre_401_insights.top_status_messages.length" class="subtle-label">高频 status_message</p>
             <p
               v-for="item in overview.pre_401_insights.top_status_messages"
-              :key="item.key"
+              :key="`pre-status-${item.key}`"
               class="observation-item"
             >
               {{ item.label }} · {{ formatCount(item.count) }} 次
             </p>
           </div>
-          <p v-else class="feedback">当前窗口和筛选范围内，前序正常样本没有留下稳定的 `status_message`。</p>
+          <p v-else class="feedback">当前窗口和筛选范围内，前序正常样本还没有留下稳定的组合模式或 `status_message`。</p>
         </article>
       </div>
 
