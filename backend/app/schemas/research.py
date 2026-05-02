@@ -125,6 +125,9 @@ class ResearchCurrentSignalSample(BaseModel):
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None = None
+    historical_overlap_signal_labels: list[str] = Field(default_factory=list)
+    historical_current_only_signal_labels: list[str] = Field(default_factory=list)
+    historical_pattern_only_signal_labels: list[str] = Field(default_factory=list)
     historical_match_event_id: int | None = None
     historical_match_event_account_id: int | None = None
     historical_match_event_account_name: str | None = None
@@ -143,6 +146,9 @@ class ResearchCurrentSignalGroupSample(BaseModel):
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None = None
+    historical_overlap_signal_labels: list[str] = Field(default_factory=list)
+    historical_current_only_signal_labels: list[str] = Field(default_factory=list)
+    historical_pattern_only_signal_labels: list[str] = Field(default_factory=list)
     historical_match_event_id: int | None = None
     historical_match_event_account_id: int | None = None
     historical_match_event_account_name: str | None = None

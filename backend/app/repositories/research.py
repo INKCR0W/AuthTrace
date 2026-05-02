@@ -126,6 +126,9 @@ class ResearchCurrentSignalSample:
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None
+    historical_overlap_signal_labels: list[str]
+    historical_current_only_signal_labels: list[str]
+    historical_pattern_only_signal_labels: list[str]
     historical_match_event_id: int | None
     historical_match_event_account_id: int | None
     historical_match_event_account_name: str | None
@@ -143,6 +146,9 @@ class ResearchCurrentSignalGroupSample:
     historical_match_label: str
     historical_match_rate: float
     historical_best_pattern: str | None
+    historical_overlap_signal_labels: list[str]
+    historical_current_only_signal_labels: list[str]
+    historical_pattern_only_signal_labels: list[str]
     historical_match_event_id: int | None
     historical_match_event_account_id: int | None
     historical_match_event_account_name: str | None
@@ -772,6 +778,9 @@ def _build_current_signal_baseline(
             historical_match_label=_HISTORICAL_MATCH_LABELS[historical_match.level],
             historical_match_rate=historical_match.rate,
             historical_best_pattern=historical_match.best_pattern_label,
+            historical_overlap_signal_labels=historical_match.overlap_signal_labels,
+            historical_current_only_signal_labels=historical_match.current_only_signal_labels,
+            historical_pattern_only_signal_labels=historical_match.historical_only_signal_labels,
             historical_match_event_id=historical_match.best_event_id,
             historical_match_event_account_id=historical_match.best_event_account_id,
             historical_match_event_account_name=historical_match.best_event_account_name,
@@ -790,6 +799,9 @@ def _build_current_signal_baseline(
                     historical_match_label=current_sample.historical_match_label,
                     historical_match_rate=current_sample.historical_match_rate,
                     historical_best_pattern=current_sample.historical_best_pattern,
+                    historical_overlap_signal_labels=current_sample.historical_overlap_signal_labels,
+                    historical_current_only_signal_labels=current_sample.historical_current_only_signal_labels,
+                    historical_pattern_only_signal_labels=current_sample.historical_pattern_only_signal_labels,
                     historical_match_event_id=current_sample.historical_match_event_id,
                     historical_match_event_account_id=current_sample.historical_match_event_account_id,
                     historical_match_event_account_name=current_sample.historical_match_event_account_name,
@@ -1088,6 +1100,9 @@ class _HistoricalSignalMatchResult:
     level: str
     rate: float
     best_pattern_label: str | None
+    overlap_signal_labels: list[str]
+    current_only_signal_labels: list[str]
+    historical_only_signal_labels: list[str]
     best_event_id: int | None
     best_event_account_id: int | None
     best_event_account_name: str | None
@@ -1153,6 +1168,9 @@ def _evaluate_historical_signal_match(
             level="no_history",
             rate=0.0,
             best_pattern_label=None,
+            overlap_signal_labels=[],
+            current_only_signal_labels=[],
+            historical_only_signal_labels=[],
             best_event_id=None,
             best_event_account_id=None,
             best_event_account_name=None,
@@ -1165,6 +1183,9 @@ def _evaluate_historical_signal_match(
             level="no_overlap",
             rate=0.0,
             best_pattern_label=None,
+            overlap_signal_labels=[],
+            current_only_signal_labels=[],
+            historical_only_signal_labels=[],
             best_event_id=None,
             best_event_account_id=None,
             best_event_account_name=None,
@@ -1218,11 +1239,25 @@ def _evaluate_historical_signal_match(
             level="no_overlap",
             rate=0.0,
             best_pattern_label=None,
+            overlap_signal_labels=[],
+            current_only_signal_labels=[],
+            historical_only_signal_labels=[],
             best_event_id=None,
             best_event_account_id=None,
             best_event_account_name=None,
             best_event_time=None,
         )
+
+    best_historical_signal_set = frozenset(best_signal_candidate.signal_keys)
+    overlap_signal_keys = [
+        key for key in RESEARCH_SIGNAL_KEYS if key in current_signal_set and key in best_historical_signal_set
+    ]
+    current_only_signal_keys = [
+        key for key in RESEARCH_SIGNAL_KEYS if key in current_signal_set and key not in best_historical_signal_set
+    ]
+    historical_only_signal_keys = [
+        key for key in RESEARCH_SIGNAL_KEYS if key in best_historical_signal_set and key not in current_signal_set
+    ]
 
     if best_is_exact:
         level = "exact_pattern"
@@ -1238,6 +1273,9 @@ def _evaluate_historical_signal_match(
             denominator=len(current_signal_set),
         ),
         best_pattern_label=best_signal_candidate.pattern_label,
+        overlap_signal_labels=_signal_labels_from_keys(overlap_signal_keys),
+        current_only_signal_labels=_signal_labels_from_keys(current_only_signal_keys),
+        historical_only_signal_labels=_signal_labels_from_keys(historical_only_signal_keys),
         best_event_id=best_signal_candidate.event_id,
         best_event_account_id=best_signal_candidate.event_account_id,
         best_event_account_name=best_signal_candidate.event_account_name,
@@ -1401,6 +1439,10 @@ def _datetime_to_timestamp(value: datetime | None) -> float:
     if value is None:
         return float("-inf")
     return value.timestamp()
+
+
+def _signal_labels_from_keys(keys: list[str]) -> list[str]:
+    return [_SIGNAL_LABELS[key] for key in keys if key in _SIGNAL_LABELS]
 
 
 def _historical_match_sort_key(level: str) -> int:

@@ -965,6 +965,9 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "historical_match_label": "暂无历史 401 样本",
             "historical_match_rate": 0.0,
             "historical_best_pattern": None,
+            "historical_overlap_signal_labels": [],
+            "historical_current_only_signal_labels": [],
+            "historical_pattern_only_signal_labels": [],
             "historical_match_event_id": None,
             "historical_match_event_account_id": None,
             "historical_match_event_account_name": None,
@@ -1149,6 +1152,9 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "historical_match_label": "暂无历史 401 样本",
             "historical_match_rate": 0.0,
             "historical_best_pattern": None,
+            "historical_overlap_signal_labels": [],
+            "historical_current_only_signal_labels": [],
+            "historical_pattern_only_signal_labels": [],
             "historical_match_event_id": None,
             "historical_match_event_account_id": None,
             "historical_match_event_account_name": None,
@@ -1373,6 +1379,9 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "historical_match_label": "暂无历史 401 样本",
             "historical_match_rate": 0.0,
             "historical_best_pattern": None,
+            "historical_overlap_signal_labels": [],
+            "historical_current_only_signal_labels": [],
+            "historical_pattern_only_signal_labels": [],
             "historical_match_event_id": None,
             "historical_match_event_account_id": None,
             "historical_match_event_account_name": None,
@@ -2172,6 +2181,14 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
                     "historical_match_label": "与历史前序完全同模式",
                     "historical_match_rate": 100.0,
                     "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                    "historical_overlap_signal_labels": [
+                        "周额度 >= 90%",
+                        "limit_reached=true",
+                        "allowed=false",
+                        "存在 status_message",
+                    ],
+                    "historical_current_only_signal_labels": [],
+                    "historical_pattern_only_signal_labels": [],
                     "historical_match_event_id": 1,
                     "historical_match_event_account_id": 1,
                     "historical_match_event_account_name": "Historical-Exact",
@@ -2190,6 +2207,15 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
                     "historical_match_label": "被历史前序模式覆盖",
                     "historical_match_rate": 100.0,
                     "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                    "historical_overlap_signal_labels": [
+                        "周额度 >= 90%",
+                        "allowed=false",
+                    ],
+                    "historical_current_only_signal_labels": [],
+                    "historical_pattern_only_signal_labels": [
+                        "limit_reached=true",
+                        "存在 status_message",
+                    ],
                     "historical_match_event_id": 1,
                     "historical_match_event_account_id": 1,
                     "historical_match_event_account_name": "Historical-Exact",
@@ -2210,16 +2236,40 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
         baseline["recent_samples"][0]["historical_best_pattern"]
         == "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message"
     )
+    assert baseline["recent_samples"][0]["historical_overlap_signal_labels"] == [
+        "周额度 >= 90%",
+        "limit_reached=true",
+        "allowed=false",
+        "存在 status_message",
+    ]
+    assert baseline["recent_samples"][0]["historical_current_only_signal_labels"] == []
+    assert baseline["recent_samples"][0]["historical_pattern_only_signal_labels"] == []
     assert baseline["recent_samples"][0]["historical_match_event_id"] == 1
     assert baseline["recent_samples"][0]["historical_match_event_account_id"] == 1
     assert baseline["recent_samples"][0]["historical_match_event_account_name"] == "Historical-Exact"
     assert baseline["recent_samples"][0]["historical_match_event_time"] == "2026-05-02T11:55:00Z"
     assert baseline["recent_samples"][1]["historical_match_level"] == "covered_pattern"
     assert baseline["recent_samples"][1]["historical_match_rate"] == 100.0
+    assert baseline["recent_samples"][1]["historical_overlap_signal_labels"] == [
+        "周额度 >= 90%",
+        "allowed=false",
+    ]
+    assert baseline["recent_samples"][1]["historical_current_only_signal_labels"] == []
+    assert baseline["recent_samples"][1]["historical_pattern_only_signal_labels"] == [
+        "limit_reached=true",
+        "存在 status_message",
+    ]
     assert baseline["recent_samples"][1]["historical_match_event_id"] == 1
     assert baseline["recent_samples"][1]["historical_match_event_account_name"] == "Historical-Exact"
     assert baseline["recent_samples"][2]["historical_match_level"] == "partial_overlap"
     assert baseline["recent_samples"][2]["historical_match_rate"] == 50.0
+    assert baseline["recent_samples"][2]["historical_overlap_signal_labels"] == ["周额度 >= 90%"]
+    assert baseline["recent_samples"][2]["historical_current_only_signal_labels"] == ["remaining <= 0"]
+    assert baseline["recent_samples"][2]["historical_pattern_only_signal_labels"] == [
+        "limit_reached=true",
+        "allowed=false",
+        "存在 status_message",
+    ]
     assert baseline["recent_samples"][2]["historical_match_event_id"] == 1
     assert baseline["recent_samples"][2]["historical_match_event_account_name"] == "Historical-Exact"
     assert baseline["recent_samples"][3] == {
@@ -2241,6 +2291,9 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
         "historical_match_label": "与历史前序未重合",
         "historical_match_rate": 0.0,
         "historical_best_pattern": None,
+        "historical_overlap_signal_labels": [],
+        "historical_current_only_signal_labels": [],
+        "historical_pattern_only_signal_labels": [],
         "historical_match_event_id": None,
         "historical_match_event_account_id": None,
         "historical_match_event_account_name": None,
@@ -2698,6 +2751,14 @@ def test_research_overview_api_filters_current_baseline_by_match_level_and_strea
                     "historical_match_label": "与历史前序完全同模式",
                     "historical_match_rate": 100.0,
                     "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                    "historical_overlap_signal_labels": [
+                        "周额度 >= 90%",
+                        "limit_reached=true",
+                        "allowed=false",
+                        "存在 status_message",
+                    ],
+                    "historical_current_only_signal_labels": [],
+                    "historical_pattern_only_signal_labels": [],
                     "historical_match_event_id": 1,
                     "historical_match_event_account_id": 1,
                     "historical_match_event_account_name": "Historical-Exact",
@@ -2711,6 +2772,14 @@ def test_research_overview_api_filters_current_baseline_by_match_level_and_strea
     ]
     assert baseline["recent_samples"][0]["consecutive_signal_snapshots"] == 2
     assert baseline["recent_samples"][0]["historical_match_level"] == "exact_pattern"
+    assert baseline["recent_samples"][0]["historical_overlap_signal_labels"] == [
+        "周额度 >= 90%",
+        "limit_reached=true",
+        "allowed=false",
+        "存在 status_message",
+    ]
+    assert baseline["recent_samples"][0]["historical_current_only_signal_labels"] == []
+    assert baseline["recent_samples"][0]["historical_pattern_only_signal_labels"] == []
 
     app.dependency_overrides.clear()
 

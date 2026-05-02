@@ -416,6 +416,22 @@ function currentSignalHistoricalMatchSummary(item: ResearchCurrentSignalSample) 
   return `${coverage}，最接近历史模式：${item.historical_best_pattern}`;
 }
 
+function currentSignalHistoricalDeltaSummary(item: ResearchCurrentSignalSample | ResearchCurrentSignalGroupSample) {
+  const segments: string[] = [];
+
+  if (item.historical_overlap_signal_labels.length && item.historical_match_level !== "exact_pattern") {
+    segments.push(`重合：${item.historical_overlap_signal_labels.join(" / ")}`);
+  }
+  if (item.historical_current_only_signal_labels.length) {
+    segments.push(`当前独有：${item.historical_current_only_signal_labels.join(" / ")}`);
+  }
+  if (item.historical_pattern_only_signal_labels.length) {
+    segments.push(`历史独有：${item.historical_pattern_only_signal_labels.join(" / ")}`);
+  }
+
+  return segments.join("；");
+}
+
 function currentSignalHistoricalReplaySummary(item: ResearchCurrentSignalSample | ResearchCurrentSignalGroupSample) {
   if (!item.historical_match_event_id || !item.historical_match_event_account_name) {
     return "";
@@ -982,6 +998,9 @@ onMounted(() => {
                       <p v-if="sample.historical_best_pattern" class="subtle-line">
                         最接近：{{ sample.historical_best_pattern }}
                       </p>
+                      <p v-if="currentSignalHistoricalDeltaSummary(sample)" class="subtle-line">
+                        {{ currentSignalHistoricalDeltaSummary(sample) }}
+                      </p>
                       <p v-if="sample.historical_match_event_id" class="subtle-line">
                         <RouterLink class="inline-link" :to="`/events/${sample.historical_match_event_id}`">
                           {{ currentSignalHistoricalReplaySummary(sample) }}
@@ -1094,6 +1113,9 @@ onMounted(() => {
                 <p class="subtle-label">已观测信号</p>
                 <p class="subtle-line">{{ currentSignalPersistenceSummary(sample) }}</p>
                 <p class="subtle-line">{{ currentSignalHistoricalMatchSummary(sample) }}</p>
+                <p v-if="currentSignalHistoricalDeltaSummary(sample)" class="subtle-line">
+                  {{ currentSignalHistoricalDeltaSummary(sample) }}
+                </p>
                 <p v-if="sample.historical_match_event_id" class="subtle-line">
                   <RouterLink class="inline-link" :to="`/events/${sample.historical_match_event_id}`">
                     {{ currentSignalHistoricalReplaySummary(sample) }}
