@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { computed, reactive, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import type { LocationQuery, LocationQueryRaw, LocationQueryValue } from "vue-router";
 
 import { getResearchOverview } from "@/api/client";
 import DistributionBarChart from "@/components/DistributionBarChart.vue";
@@ -35,17 +36,25 @@ const CURRENT_STREAK_OPTIONS = [
   { value: "3", label: "连续至少 3 轮" },
   { value: "4", label: "连续至少 4 轮" },
 ] as const;
+const WINDOW_DAY_OPTIONS = [7, 14, 30] as const;
 const currentSignalLabelMap = Object.fromEntries(
   CURRENT_SIGNAL_OPTIONS.map((item) => [item.key, item.label]),
 ) as Record<string, string>;
 const currentMatchLabelMap = Object.fromEntries(
   CURRENT_MATCH_OPTIONS.map((item) => [item.key, item.label]),
 ) as Record<string, string>;
+const allowedCurrentSignalKeys = new Set(CURRENT_SIGNAL_OPTIONS.map((item) => item.key));
+const allowedCurrentMatchKeys = new Set(CURRENT_MATCH_OPTIONS.map((item) => item.key));
+const allowedCurrentSignalMinStreaks = new Set(CURRENT_STREAK_OPTIONS.map((item) => item.value));
+const currentSignalOrderMap = new Map(CURRENT_SIGNAL_OPTIONS.map((item, index) => [item.key, index]));
 
+const route = useRoute();
+const router = useRouter();
 const loading = ref(false);
 const error = ref("");
 const windowDays = ref(7);
 const overview = ref<ResearchOverviewResponse | null>(null);
+const hasInitializedRouteState = ref(false);
 const filters = reactive({
   provider: "",
   accountType: "",
@@ -56,6 +65,30 @@ const filters = reactive({
   currentMatchLevel: "",
   currentSignalMinStreak: "",
 });
+
+interface ResearchRouteState {
+  windowDays: number;
+  provider: string;
+  accountType: string;
+  currentSignalKey: string;
+  currentSignalPatternKey: string;
+  pre401SignalKey: string;
+  pre401SignalPatternKey: string;
+  currentMatchLevel: string;
+  currentSignalMinStreak: string;
+}
+
+const researchRouteQueryKeys = [
+  "window_days",
+  "provider",
+  "account_type",
+  "current_signal_key",
+  "current_signal_pattern_key",
+  "pre_401_signal_key",
+  "pre_401_signal_pattern_key",
+  "current_match_level",
+  "current_signal_min_streak",
+] as const;
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
 const hourlyValues = computed(() => overview.value?.event_hour_distribution.map((item) => item.became_401_count) ?? []);
@@ -415,7 +448,178 @@ function isScopeFilterActive(provider: string | null, accountType: string | null
   return normalizedProvider.value === (provider ?? "") && normalizedAccountType.value === (accountType ?? "");
 }
 
-async function loadOverview() {
+function normalizeQueryValue(value: LocationQueryValue | LocationQueryValue[] | undefined) {
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0].trim() : "";
+  }
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeAllowedValue(value: string, allowedValues: Set<string>) {
+  return allowedValues.has(value) ? value : "";
+}
+
+function normalizePatternKeyValue(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const segments = value
+    .split("|")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (!segments.length) {
+    return "";
+  }
+
+  const uniqueSegments = new Set<string>();
+  for (const segment of segments) {
+    if (!allowedCurrentSignalKeys.has(segment) || uniqueSegments.has(segment)) {
+      return "";
+    }
+    uniqueSegments.add(segment);
+  }
+
+  return [...uniqueSegments]
+    .sort((left, right) => (currentSignalOrderMap.get(left) ?? 0) - (currentSignalOrderMap.get(right) ?? 0))
+    .join("|");
+}
+
+function normalizeWindowDayValue(value: string) {
+  const parsed = Number(value);
+  return WINDOW_DAY_OPTIONS.includes(parsed as (typeof WINDOW_DAY_OPTIONS)[number]) ? parsed : 7;
+}
+
+function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
+  return {
+    windowDays: normalizeWindowDayValue(normalizeQueryValue(query.window_days)),
+    provider: normalizeQueryValue(query.provider),
+    accountType: normalizeQueryValue(query.account_type),
+    currentSignalKey: normalizeAllowedValue(
+      normalizeQueryValue(query.current_signal_key),
+      allowedCurrentSignalKeys,
+    ),
+    currentSignalPatternKey: normalizePatternKeyValue(normalizeQueryValue(query.current_signal_pattern_key)),
+    pre401SignalKey: normalizeAllowedValue(
+      normalizeQueryValue(query.pre_401_signal_key),
+      allowedCurrentSignalKeys,
+    ),
+    pre401SignalPatternKey: normalizePatternKeyValue(normalizeQueryValue(query.pre_401_signal_pattern_key)),
+    currentMatchLevel: normalizeAllowedValue(
+      normalizeQueryValue(query.current_match_level),
+      allowedCurrentMatchKeys,
+    ),
+    currentSignalMinStreak: normalizeAllowedValue(
+      normalizeQueryValue(query.current_signal_min_streak),
+      allowedCurrentSignalMinStreaks,
+    ),
+  };
+}
+
+function readCurrentRouteState(): ResearchRouteState {
+  return {
+    windowDays: windowDays.value,
+    provider: normalizedProvider.value,
+    accountType: normalizedAccountType.value,
+    currentSignalKey: normalizedCurrentSignalKey.value,
+    currentSignalPatternKey: normalizePatternKeyValue(normalizedCurrentSignalPatternKey.value),
+    pre401SignalKey: normalizedPre401SignalKey.value,
+    pre401SignalPatternKey: normalizePatternKeyValue(normalizedPre401SignalPatternKey.value),
+    currentMatchLevel: normalizedCurrentMatchLevel.value,
+    currentSignalMinStreak: normalizedCurrentSignalMinStreak.value,
+  };
+}
+
+function applyRouteState(state: ResearchRouteState) {
+  windowDays.value = state.windowDays;
+  syncFilters({
+    provider: state.provider,
+    accountType: state.accountType,
+    currentSignalKey: state.currentSignalKey,
+    currentSignalPatternKey: state.currentSignalPatternKey,
+    pre401SignalKey: state.pre401SignalKey,
+    pre401SignalPatternKey: state.pre401SignalPatternKey,
+    currentMatchLevel: state.currentMatchLevel,
+    currentSignalMinStreak: state.currentSignalMinStreak,
+  });
+}
+
+function areRouteStatesEqual(left: ResearchRouteState, right: ResearchRouteState) {
+  return (
+    left.windowDays === right.windowDays &&
+    left.provider === right.provider &&
+    left.accountType === right.accountType &&
+    left.currentSignalKey === right.currentSignalKey &&
+    left.currentSignalPatternKey === right.currentSignalPatternKey &&
+    left.pre401SignalKey === right.pre401SignalKey &&
+    left.pre401SignalPatternKey === right.pre401SignalPatternKey &&
+    left.currentMatchLevel === right.currentMatchLevel &&
+    left.currentSignalMinStreak === right.currentSignalMinStreak
+  );
+}
+
+function buildRouteQuery(state: ResearchRouteState): LocationQueryRaw {
+  const query: LocationQueryRaw = {};
+
+  if (state.windowDays !== 7) {
+    query.window_days = String(state.windowDays);
+  }
+  if (state.provider) {
+    query.provider = state.provider;
+  }
+  if (state.accountType) {
+    query.account_type = state.accountType;
+  }
+  if (state.currentSignalKey) {
+    query.current_signal_key = state.currentSignalKey;
+  }
+  if (state.currentSignalPatternKey) {
+    query.current_signal_pattern_key = state.currentSignalPatternKey;
+  }
+  if (state.pre401SignalKey) {
+    query.pre_401_signal_key = state.pre401SignalKey;
+  }
+  if (state.pre401SignalPatternKey) {
+    query.pre_401_signal_pattern_key = state.pre401SignalPatternKey;
+  }
+  if (state.currentMatchLevel) {
+    query.current_match_level = state.currentMatchLevel;
+  }
+  if (state.currentSignalMinStreak) {
+    query.current_signal_min_streak = state.currentSignalMinStreak;
+  }
+
+  return query;
+}
+
+function isRouteQuerySynced(query: LocationQuery, state: ResearchRouteState) {
+  const targetQuery = buildRouteQuery(state);
+
+  return researchRouteQueryKeys.every((key) => {
+    const currentValue = normalizeQueryValue(query[key]);
+    const targetValue = normalizeQueryValue(targetQuery[key]);
+    return currentValue === targetValue;
+  });
+}
+
+async function syncRouteQuery() {
+  const currentState = readCurrentRouteState();
+
+  if (isRouteQuerySynced(route.query, currentState)) {
+    return;
+  }
+
+  await router.replace({
+    query: buildRouteQuery(currentState),
+  });
+}
+
+async function loadOverview(options?: { syncRoute?: boolean }) {
+  if (options?.syncRoute !== false) {
+    await syncRouteQuery();
+  }
+
   loading.value = true;
   error.value = "";
 
@@ -542,9 +746,28 @@ function currentGroupHistoricalLikeSummary(item: ResearchCurrentSignalGroupSampl
   return `${item.historical_match_label} / 连续 ${formatCount(item.consecutive_signal_snapshots)} 轮`;
 }
 
-onMounted(() => {
-  void loadOverview();
-});
+watch(
+  () => route.query,
+  (query) => {
+    const nextState = buildRouteStateFromQuery(query);
+    const currentState = readCurrentRouteState();
+
+    if (!hasInitializedRouteState.value) {
+      hasInitializedRouteState.value = true;
+      applyRouteState(nextState);
+      void loadOverview();
+      return;
+    }
+
+    if (areRouteStatesEqual(nextState, currentState)) {
+      return;
+    }
+
+    applyRouteState(nextState);
+    void loadOverview();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -641,6 +864,7 @@ onMounted(() => {
     </div>
 
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
+    <p class="subtle-line">当前筛选会写入页面 URL，刷新或复制链接后可直接恢复这组研究视角。</p>
     <p v-if="selectedCurrentSignalLabel || selectedCurrentSignalPatternLabel" class="subtle-line">
       “当前信号 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
     </p>
