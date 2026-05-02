@@ -886,6 +886,8 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
     payload = response.json()
     assert payload["summary"]["became_401_events"] == 0
     assert payload["recent_event_samples"] == []
+    assert payload["signal_comparison"] == []
+    assert payload["signal_pattern_comparison"] == []
     baseline = payload["current_signal_baseline"]
     assert baseline["observed_accounts"] == 2
     assert baseline["signal_accounts"] == 1
@@ -1337,38 +1339,8 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "count": 1,
         }
     ]
-    signal_comparison = {
-        item["key"]: (
-            item["pre_401_count"],
-            item["pre_401_rate"],
-            item["current_count"],
-            item["current_rate"],
-            item["rate_gap"],
-        )
-        for item in payload["signal_comparison"]
-    }
-    assert signal_comparison == {
-        "weekly_ge_90": (0, 0.0, 1, 33.33, -33.33),
-        "short_ge_90": (0, 0.0, 1, 33.33, -33.33),
-        "limit_reached": (0, 0.0, 2, 66.67, -66.67),
-        "allowed_false": (0, 0.0, 1, 33.33, -33.33),
-        "remaining_empty": (0, 0.0, 0, 0.0, 0.0),
-        "status_message_present": (0, 0.0, 1, 33.33, -33.33),
-    }
-    signal_pattern_comparison = {
-        item["key"]: (
-            item["pre_401_count"],
-            item["pre_401_rate"],
-            item["current_count"],
-            item["current_rate"],
-            item["rate_gap"],
-        )
-        for item in payload["signal_pattern_comparison"]
-    }
-    assert signal_pattern_comparison == {
-        "short_ge_90|limit_reached|status_message_present": (0, 0.0, 1, 33.33, -33.33),
-        "weekly_ge_90|limit_reached|allowed_false": (0, 0.0, 1, 33.33, -33.33),
-    }
+    assert payload["signal_comparison"] == []
+    assert payload["signal_pattern_comparison"] == []
     assert baseline["recent_samples"] == [
         {
             "account_id": 1,

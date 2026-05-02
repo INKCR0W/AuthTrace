@@ -134,6 +134,9 @@ const leadingHistoricalLikeGroup = computed(() => {
   }
   return item;
 });
+const hasHistoricalPreviousSamples = computed(
+  () => (overview.value?.summary.sampled_previous_snapshots ?? 0) > 0,
+);
 const dominantCurrentSignalPatternSummary = computed(() => {
   const baseline = overview.value?.current_signal_baseline;
   const dominantPattern = dominantCurrentSignalPattern.value;
@@ -570,6 +573,9 @@ onMounted(() => {
         <p v-if="leadingSignalComparisonSummary" class="subtle-line">
           {{ leadingSignalComparisonSummary }}
         </p>
+        <p v-else-if="!hasHistoricalPreviousSamples" class="subtle-line">
+          当前范围内还没有可回放的历史 `401` 前样本，信号对照会在出现前序证据后自动启用；现阶段请优先观察“当前基线”和“当前组合热点”。
+        </p>
         <p v-else class="subtle-line">
           当前范围内还没有出现“历史命中率明显高于当前基线”的单一信号，需结合组合模式与样本回放继续判断。
         </p>
@@ -612,6 +618,9 @@ onMounted(() => {
 
         <p v-if="leadingSignalPatternComparisonSummary" class="subtle-line">
           {{ leadingSignalPatternComparisonSummary }}
+        </p>
+        <p v-else-if="!hasHistoricalPreviousSamples" class="subtle-line">
+          当前范围内还没有可回放的历史 `401` 前样本，组合对照暂时没有研究基线；等出现真实前序样本后再看哪些组合更像历史证据。
         </p>
         <p v-else class="subtle-line">
           当前范围内还没有出现“历史命中率明显高于当前基线”的组合模式，需继续积累样本或结合单信号差值判断。
@@ -730,8 +739,11 @@ onMounted(() => {
         <p v-if="leadingHistoricalLikeGroupSummary" class="subtle-line">
           {{ leadingHistoricalLikeGroupSummary }}
         </p>
-        <p class="subtle-line">
+        <p v-if="hasHistoricalPreviousSamples" class="subtle-line">
           “历史高贴近”只统计与历史 `401` 前模式“完全同模式”或“被历史模式覆盖”的当前样本，可优先作为下一批回放对象。
+        </p>
+        <p v-else class="subtle-line">
+          当前范围内还没有历史 `401` 前样本，因此“历史高贴近”列会先保持为 `0`；现阶段更适合先按信号规模、连续轮数和主导模式积累样本。
         </p>
 
         <div v-if="overview.current_signal_baseline.current_signal_group_breakdown.length" class="table-wrap">

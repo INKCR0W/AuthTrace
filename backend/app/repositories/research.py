@@ -443,6 +443,9 @@ def _build_signal_comparison(
     filters: ResearchOverviewFilters,
 ) -> list[ResearchSignalComparisonItem]:
     previous_snapshots = [snapshot for _, _, snapshot in event_rows if snapshot is not None]
+    if not previous_snapshots:
+        return []
+
     pre_401_counter = Counter[str]()
     for snapshot in previous_snapshots:
         pre_401_counter.update(_extract_snapshot_signal_keys(snapshot))
@@ -565,6 +568,9 @@ def _build_signal_pattern_comparison(
     filters: ResearchOverviewFilters,
 ) -> list[ResearchSignalPatternComparisonItem]:
     previous_snapshots = [snapshot for _, _, snapshot in event_rows if snapshot is not None]
+    if not previous_snapshots:
+        return []
+
     pre_401_counter = Counter[str]()
     for snapshot in previous_snapshots:
         signal_keys = _extract_snapshot_signal_keys(snapshot)
