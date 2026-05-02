@@ -205,6 +205,7 @@ class ResearchOverviewFilters:
     current_signal_pattern_key: str | None = None
     pre_401_signal_key: str | None = None
     pre_401_signal_pattern_key: str | None = None
+    pre_401_gap_bucket: str | None = None
     current_match_level: str | None = None
     current_signal_min_streak: int | None = None
 
@@ -219,6 +220,7 @@ def get_research_overview(
     current_signal_pattern_key: str | None = None,
     pre_401_signal_key: str | None = None,
     pre_401_signal_pattern_key: str | None = None,
+    pre_401_gap_bucket: str | None = None,
     current_match_level: str | None = None,
     current_signal_min_streak: int | None = None,
 ) -> ResearchOverview:
@@ -231,6 +233,7 @@ def get_research_overview(
         current_signal_pattern_key=current_signal_pattern_key,
         pre_401_signal_key=pre_401_signal_key,
         pre_401_signal_pattern_key=pre_401_signal_pattern_key,
+        pre_401_gap_bucket=pre_401_gap_bucket,
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
     )
@@ -255,6 +258,7 @@ def get_research_overview(
         event_rows,
         signal_key=filters.pre_401_signal_key,
         pattern_key=filters.pre_401_signal_pattern_key,
+        gap_bucket=filters.pre_401_gap_bucket,
     )
 
     active_accounts = int(
@@ -332,8 +336,9 @@ def _filter_event_rows_by_previous_signal(
     *,
     signal_key: str | None,
     pattern_key: str | None,
+    gap_bucket: str | None,
 ) -> list[tuple[AccountEvent, Account, AccountSnapshot | None]]:
-    if signal_key is None and pattern_key is None:
+    if signal_key is None and pattern_key is None and gap_bucket is None:
         return event_rows
 
     filtered_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]] = []
@@ -341,6 +346,13 @@ def _filter_event_rows_by_previous_signal(
         previous_snapshot = row[2]
         if previous_snapshot is None:
             continue
+        if gap_bucket is not None:
+            previous_gap_bucket = _bucket_previous_gap(
+                event_time=row[0].event_time,
+                previous_checked_at=previous_snapshot.checked_at,
+            )
+            if previous_gap_bucket != gap_bucket:
+                continue
         signal_keys = _extract_snapshot_signal_keys(previous_snapshot)
         if signal_key is not None and signal_key not in signal_keys:
             continue
@@ -913,11 +925,8 @@ def _build_percent_band_counts(counter: Counter[str]) -> list[ResearchBucketCoun
 
 def _build_previous_gap_band_counts(counter: Counter[str]) -> list[ResearchBucketCount]:
     bands = [
-        ("lt_15m", "15 分钟内", counter.get("lt_15m", 0)),
-        ("15m_1h", "15-60 分钟", counter.get("15m_1h", 0)),
-        ("1h_6h", "1-6 小时", counter.get("1h_6h", 0)),
-        ("6h_24h", "6-24 小时", counter.get("6h_24h", 0)),
-        ("24h_plus", "24 小时以上", counter.get("24h_plus", 0)),
+        (key, label, counter.get(key, 0))
+        for key, label in _PREVIOUS_GAP_BANDS
     ]
     return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in bands]
 
@@ -1080,6 +1089,14 @@ _SIGNAL_LABELS = {
     "status_message_present": "存在 status_message",
 }
 RESEARCH_SIGNAL_KEYS = tuple(_SIGNAL_LABELS)
+_PREVIOUS_GAP_BANDS = (
+    ("lt_15m", "15 分钟内"),
+    ("15m_1h", "15-60 分钟"),
+    ("1h_6h", "1-6 小时"),
+    ("6h_24h", "6-24 小时"),
+    ("24h_plus", "24 小时以上"),
+)
+RESEARCH_PRE_401_GAP_BUCKET_KEYS = tuple(key for key, _ in _PREVIOUS_GAP_BANDS)
 _HISTORICAL_MATCH_LABELS = {
     "exact_pattern": "与历史前序完全同模式",
     "covered_pattern": "被历史前序模式覆盖",

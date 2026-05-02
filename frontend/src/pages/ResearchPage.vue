@@ -36,6 +36,13 @@ const CURRENT_STREAK_OPTIONS = [
   { value: "3", label: "连续至少 3 轮" },
   { value: "4", label: "连续至少 4 轮" },
 ] as const;
+const PRE_401_GAP_OPTIONS = [
+  { key: "lt_15m", label: "15 分钟内" },
+  { key: "15m_1h", label: "15-60 分钟" },
+  { key: "1h_6h", label: "1-6 小时" },
+  { key: "6h_24h", label: "6-24 小时" },
+  { key: "24h_plus", label: "24 小时以上" },
+] as const;
 const WINDOW_DAY_OPTIONS = [7, 14, 30] as const;
 const currentSignalLabelMap = Object.fromEntries(
   CURRENT_SIGNAL_OPTIONS.map((item) => [item.key, item.label]),
@@ -43,9 +50,13 @@ const currentSignalLabelMap = Object.fromEntries(
 const currentMatchLabelMap = Object.fromEntries(
   CURRENT_MATCH_OPTIONS.map((item) => [item.key, item.label]),
 ) as Record<string, string>;
+const pre401GapLabelMap = Object.fromEntries(
+  PRE_401_GAP_OPTIONS.map((item) => [item.key, item.label]),
+) as Record<string, string>;
 const allowedCurrentSignalKeys = new Set(CURRENT_SIGNAL_OPTIONS.map((item) => item.key));
 const allowedCurrentMatchKeys = new Set(CURRENT_MATCH_OPTIONS.map((item) => item.key));
 const allowedCurrentSignalMinStreaks = new Set(CURRENT_STREAK_OPTIONS.map((item) => item.value));
+const allowedPre401GapKeys = new Set(PRE_401_GAP_OPTIONS.map((item) => item.key));
 const currentSignalOrderMap = new Map(CURRENT_SIGNAL_OPTIONS.map((item, index) => [item.key, index]));
 
 const route = useRoute();
@@ -62,6 +73,7 @@ const filters = reactive({
   currentSignalPatternKey: "",
   pre401SignalKey: "",
   pre401SignalPatternKey: "",
+  pre401GapBucket: "",
   currentMatchLevel: "",
   currentSignalMinStreak: "",
 });
@@ -74,6 +86,7 @@ interface ResearchRouteState {
   currentSignalPatternKey: string;
   pre401SignalKey: string;
   pre401SignalPatternKey: string;
+  pre401GapBucket: string;
   currentMatchLevel: string;
   currentSignalMinStreak: string;
 }
@@ -86,6 +99,7 @@ const researchRouteQueryKeys = [
   "current_signal_pattern_key",
   "pre_401_signal_key",
   "pre_401_signal_pattern_key",
+  "pre_401_gap_bucket",
   "current_match_level",
   "current_signal_min_streak",
 ] as const;
@@ -116,6 +130,7 @@ const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim(
 const normalizedCurrentSignalPatternKey = computed(() => filters.currentSignalPatternKey.trim());
 const normalizedPre401SignalKey = computed(() => filters.pre401SignalKey.trim());
 const normalizedPre401SignalPatternKey = computed(() => filters.pre401SignalPatternKey.trim());
+const normalizedPre401GapBucket = computed(() => filters.pre401GapBucket.trim());
 const normalizedCurrentMatchLevel = computed(() => filters.currentMatchLevel.trim());
 const normalizedCurrentSignalMinStreak = computed(() => filters.currentSignalMinStreak.trim());
 const selectedCurrentSignalLabel = computed(() => {
@@ -185,6 +200,12 @@ const selectedPre401SignalPatternLabel = computed(() => {
   );
   return matched?.label ?? formatPatternLabel(normalizedPre401SignalPatternKey.value);
 });
+const selectedPre401GapBucketLabel = computed(() => {
+  if (!normalizedPre401GapBucket.value) {
+    return "";
+  }
+  return pre401GapLabelMap[normalizedPre401GapBucket.value] ?? normalizedPre401GapBucket.value;
+});
 const selectedCurrentMatchLabel = computed(() => {
   if (!normalizedCurrentMatchLevel.value) {
     return "";
@@ -206,6 +227,7 @@ const hasScopedFilters = computed(
         normalizedCurrentSignalPatternKey.value ||
         normalizedPre401SignalKey.value ||
         normalizedPre401SignalPatternKey.value ||
+        normalizedPre401GapBucket.value ||
         normalizedCurrentMatchLevel.value ||
         normalizedCurrentSignalMinStreak.value,
     ),
@@ -230,6 +252,9 @@ const scopeSummary = computed(() => {
   }
   if (selectedPre401SignalPatternLabel.value) {
     segments.push(`前序模式=${selectedPre401SignalPatternLabel.value}`);
+  }
+  if (selectedPre401GapBucketLabel.value) {
+    segments.push(`前序新鲜度=${selectedPre401GapBucketLabel.value}`);
   }
   if (selectedCurrentMatchLabel.value) {
     segments.push(`历史贴近=${selectedCurrentMatchLabel.value}`);
@@ -369,6 +394,9 @@ function syncFilters(next: Partial<typeof filters>) {
   if (next.pre401SignalPatternKey !== undefined) {
     filters.pre401SignalPatternKey = next.pre401SignalPatternKey;
   }
+  if (next.pre401GapBucket !== undefined) {
+    filters.pre401GapBucket = next.pre401GapBucket;
+  }
   if (next.currentMatchLevel !== undefined) {
     filters.currentMatchLevel = next.currentMatchLevel;
   }
@@ -409,6 +437,13 @@ function applyPre401SignalPatternFilter(patternKey: string) {
   void loadOverview();
 }
 
+function applyPre401GapBucketFilter(gapBucket: string) {
+  syncFilters({
+    pre401GapBucket: gapBucket,
+  });
+  void loadOverview();
+}
+
 function applyCurrentMatchLevelFilter(matchLevel: string) {
   syncFilters({
     currentMatchLevel: matchLevel,
@@ -438,6 +473,10 @@ function isPre401SignalFilterActive(signalKey: string) {
 
 function isPre401SignalPatternFilterActive(patternKey: string) {
   return normalizedPre401SignalPatternKey.value === patternKey;
+}
+
+function isPre401GapBucketFilterActive(gapBucket: string) {
+  return normalizedPre401GapBucket.value === gapBucket;
 }
 
 function isCurrentMatchLevelFilterActive(matchLevel: string) {
@@ -506,6 +545,7 @@ function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
       allowedCurrentSignalKeys,
     ),
     pre401SignalPatternKey: normalizePatternKeyValue(normalizeQueryValue(query.pre_401_signal_pattern_key)),
+    pre401GapBucket: normalizeAllowedValue(normalizeQueryValue(query.pre_401_gap_bucket), allowedPre401GapKeys),
     currentMatchLevel: normalizeAllowedValue(
       normalizeQueryValue(query.current_match_level),
       allowedCurrentMatchKeys,
@@ -526,6 +566,7 @@ function readCurrentRouteState(): ResearchRouteState {
     currentSignalPatternKey: normalizePatternKeyValue(normalizedCurrentSignalPatternKey.value),
     pre401SignalKey: normalizedPre401SignalKey.value,
     pre401SignalPatternKey: normalizePatternKeyValue(normalizedPre401SignalPatternKey.value),
+    pre401GapBucket: normalizedPre401GapBucket.value,
     currentMatchLevel: normalizedCurrentMatchLevel.value,
     currentSignalMinStreak: normalizedCurrentSignalMinStreak.value,
   };
@@ -540,6 +581,7 @@ function applyRouteState(state: ResearchRouteState) {
     currentSignalPatternKey: state.currentSignalPatternKey,
     pre401SignalKey: state.pre401SignalKey,
     pre401SignalPatternKey: state.pre401SignalPatternKey,
+    pre401GapBucket: state.pre401GapBucket,
     currentMatchLevel: state.currentMatchLevel,
     currentSignalMinStreak: state.currentSignalMinStreak,
   });
@@ -554,6 +596,7 @@ function areRouteStatesEqual(left: ResearchRouteState, right: ResearchRouteState
     left.currentSignalPatternKey === right.currentSignalPatternKey &&
     left.pre401SignalKey === right.pre401SignalKey &&
     left.pre401SignalPatternKey === right.pre401SignalPatternKey &&
+    left.pre401GapBucket === right.pre401GapBucket &&
     left.currentMatchLevel === right.currentMatchLevel &&
     left.currentSignalMinStreak === right.currentSignalMinStreak
   );
@@ -582,6 +625,9 @@ function buildRouteQuery(state: ResearchRouteState): LocationQueryRaw {
   }
   if (state.pre401SignalPatternKey) {
     query.pre_401_signal_pattern_key = state.pre401SignalPatternKey;
+  }
+  if (state.pre401GapBucket) {
+    query.pre_401_gap_bucket = state.pre401GapBucket;
   }
   if (state.currentMatchLevel) {
     query.current_match_level = state.currentMatchLevel;
@@ -632,6 +678,7 @@ async function loadOverview(options?: { syncRoute?: boolean }) {
       current_signal_pattern_key: normalizedCurrentSignalPatternKey.value || undefined,
       pre_401_signal_key: normalizedPre401SignalKey.value || undefined,
       pre_401_signal_pattern_key: normalizedPre401SignalPatternKey.value || undefined,
+      pre_401_gap_bucket: normalizedPre401GapBucket.value || undefined,
       current_match_level: normalizedCurrentMatchLevel.value || undefined,
       current_signal_min_streak: normalizedCurrentSignalMinStreak.value
         ? Number(normalizedCurrentSignalMinStreak.value)
@@ -651,6 +698,7 @@ function resetFilters() {
   filters.currentSignalPatternKey = "";
   filters.pre401SignalKey = "";
   filters.pre401SignalPatternKey = "";
+  filters.pre401GapBucket = "";
   filters.currentMatchLevel = "";
   filters.currentSignalMinStreak = "";
   void loadOverview();
@@ -833,6 +881,15 @@ watch(
           </select>
         </label>
         <label>
+          <span class="subtle-label">前序新鲜度</span>
+          <select v-model="filters.pre401GapBucket" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部区间</option>
+            <option v-for="item in PRE_401_GAP_OPTIONS" :key="item.key" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">历史贴近</span>
           <select v-model="filters.currentMatchLevel" class="input-field compact-select" @change="loadOverview">
             <option value="">全部贴近度</option>
@@ -874,16 +931,20 @@ watch(
     <p v-if="selectedPre401SignalLabel || selectedPre401SignalPatternLabel" class="subtle-line">
       “前序信号 / 前序模式”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
     </p>
+    <p v-if="selectedPre401GapBucketLabel" class="subtle-line">
+      “前序新鲜度”筛选同样只收窄历史证据区，用来区分更贴近 401 事件的高可信前序样本和间隔过长的弱证据。
+    </p>
     <p
       v-if="
         selectedCurrentSignalLabel ||
         selectedCurrentSignalPatternLabel ||
         selectedPre401SignalLabel ||
-        selectedPre401SignalPatternLabel
+        selectedPre401SignalPatternLabel ||
+        selectedPre401GapBucketLabel
       "
       class="subtle-line"
     >
-      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前模式 / 前序信号 / 前序模式”局部收窄，便于稳定比较历史样本与当前基线。
+      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前模式 / 前序信号 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
@@ -1273,6 +1334,23 @@ watch(
             </div>
           </div>
           <DistributionBarChart :labels="gapBandLabels" :values="gapBandValues" series-name="前序样本数" />
+          <div v-if="overview.pre_401_insights.previous_to_event_gap_bands.length" class="observation-list">
+            <div
+              v-for="item in overview.pre_401_insights.previous_to_event_gap_bands"
+              :key="`gap-band-${item.key}`"
+              class="observation-item observation-item-action"
+            >
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 次</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isPre401GapBucketFilterActive(item.key)"
+                @click="applyPre401GapBucketFilter(item.key)"
+              >
+                {{ isPre401GapBucketFilterActive(item.key) ? "已筛到新鲜度" : "筛到新鲜度" }}
+              </button>
+            </div>
+          </div>
         </article>
 
         <article class="panel chart-panel">
