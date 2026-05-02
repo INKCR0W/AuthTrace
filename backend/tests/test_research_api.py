@@ -356,6 +356,21 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "remaining_empty": (1, 33.33, 0, 0.0, 33.33),
         "status_message_present": (2, 66.67, 0, 0.0, 66.67),
     }
+    signal_pattern_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_pattern_comparison"]
+    }
+    assert signal_pattern_comparison == {
+        "weekly_ge_90|limit_reached|allowed_false|status_message_present": (1, 33.33, 0, 0.0, 33.33),
+        "short_ge_90|remaining_empty": (1, 33.33, 0, 0.0, 33.33),
+        "status_message_present": (1, 33.33, 0, 0.0, 33.33),
+    }
 
     recent_samples = payload["recent_event_samples"]
     assert [item["event_id"] for item in recent_samples[:3]] == [1, 2, 3]
@@ -1300,6 +1315,20 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
         "remaining_empty": (0, 0.0, 0, 0.0, 0.0),
         "status_message_present": (0, 0.0, 1, 33.33, -33.33),
     }
+    signal_pattern_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_pattern_comparison"]
+    }
+    assert signal_pattern_comparison == {
+        "short_ge_90|limit_reached|status_message_present": (0, 0.0, 1, 33.33, -33.33),
+        "weekly_ge_90|limit_reached|allowed_false": (0, 0.0, 1, 33.33, -33.33),
+    }
     assert baseline["recent_samples"] == [
         {
             "account_id": 1,
@@ -1556,6 +1585,21 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
         "allowed_false": (1, 50.0, 1, 100.0, -50.0),
         "remaining_empty": (1, 50.0, 0, 0.0, 50.0),
         "status_message_present": (1, 50.0, 0, 0.0, 50.0),
+    }
+    signal_pattern_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["signal_pattern_comparison"]
+    }
+    assert signal_pattern_comparison == {
+        "short_ge_90|remaining_empty": (1, 50.0, 0, 0.0, 50.0),
+        "weekly_ge_90|limit_reached|allowed_false|status_message_present": (1, 50.0, 0, 0.0, 50.0),
+        "weekly_ge_90|limit_reached|allowed_false": (0, 0.0, 1, 100.0, -100.0),
     }
     assert payload["current_signal_baseline"]["signal_accounts"] == 1
 

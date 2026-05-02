@@ -64,6 +64,17 @@ class ResearchSignalComparisonItem:
 
 
 @dataclass(slots=True)
+class ResearchSignalPatternComparisonItem:
+    key: str
+    label: str
+    pre_401_count: int
+    pre_401_rate: float
+    current_count: int
+    current_rate: float
+    rate_gap: float
+
+
+@dataclass(slots=True)
 class ResearchPre401Insights:
     sampled_events: int
     events_with_previous_snapshot: int
@@ -144,6 +155,7 @@ class ResearchOverview:
     provider_account_type_breakdown: list[ResearchCombinationBreakdownItem]
     event_hour_distribution: list[ResearchHourlyDistributionPoint]
     signal_comparison: list[ResearchSignalComparisonItem]
+    signal_pattern_comparison: list[ResearchSignalPatternComparisonItem]
     pre_401_insights: ResearchPre401Insights
     recent_event_samples: list[ResearchEventSample]
     current_signal_baseline: ResearchCurrentSignalBaseline
@@ -247,6 +259,11 @@ def get_research_overview(
         ),
         event_hour_distribution=_build_event_hour_distribution(event_rows),
         signal_comparison=_build_signal_comparison(
+            db,
+            event_rows=event_rows,
+            filters=scope_filters,
+        ),
+        signal_pattern_comparison=_build_signal_pattern_comparison(
             db,
             event_rows=event_rows,
             filters=scope_filters,
@@ -514,6 +531,77 @@ def _build_recent_event_samples(
         key=lambda item: (item.event_time, item.event_id),
         reverse=True,
     )[:10]
+
+
+def _build_signal_pattern_comparison(
+    db: Session,
+    *,
+    event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
+    filters: ResearchOverviewFilters,
+) -> list[ResearchSignalPatternComparisonItem]:
+    previous_snapshots = [snapshot for _, _, snapshot in event_rows if snapshot is not None]
+    pre_401_counter = Counter[str]()
+    for snapshot in previous_snapshots:
+        signal_keys = _extract_snapshot_signal_keys(snapshot)
+        if signal_keys:
+            pre_401_counter["|".join(signal_keys)] += 1
+
+    current_accounts = list(
+        db.scalars(
+            select(Account).where(
+                *_build_account_scope_conditions(filters),
+                Account.disabled.is_(False),
+                Account.current_is_401.is_(False),
+            )
+        )
+    )
+    current_counter = Counter[str]()
+    for account in current_accounts:
+        signal_keys = _extract_account_signal_keys(account)
+        if signal_keys:
+            current_counter["|".join(signal_keys)] += 1
+
+    pre_401_denominator = len(previous_snapshots)
+    current_denominator = len(current_accounts)
+    items = [
+        ResearchSignalPatternComparisonItem(
+            key=pattern_key,
+            label=_build_signal_pattern_label(pattern_key),
+            pre_401_count=pre_401_counter.get(pattern_key, 0),
+            pre_401_rate=_to_rate_percent(
+                numerator=pre_401_counter.get(pattern_key, 0),
+                denominator=pre_401_denominator,
+            ),
+            current_count=current_counter.get(pattern_key, 0),
+            current_rate=_to_rate_percent(
+                numerator=current_counter.get(pattern_key, 0),
+                denominator=current_denominator,
+            ),
+            rate_gap=round(
+                _to_rate_percent(
+                    numerator=pre_401_counter.get(pattern_key, 0),
+                    denominator=pre_401_denominator,
+                )
+                - _to_rate_percent(
+                    numerator=current_counter.get(pattern_key, 0),
+                    denominator=current_denominator,
+                ),
+                2,
+            ),
+        )
+        for pattern_key in set(pre_401_counter) | set(current_counter)
+    ]
+    return sorted(
+        items,
+        key=lambda item: (
+            -int(item.pre_401_count > 0 or item.current_count > 0),
+            -item.rate_gap,
+            -item.pre_401_count,
+            -item.current_count,
+            item.label,
+            item.key,
+        ),
+    )[:8]
 
 
 def _build_current_signal_baseline(
