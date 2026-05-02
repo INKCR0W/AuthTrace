@@ -196,6 +196,8 @@ class ResearchOverviewFilters:
     account_type: str | None = None
     current_signal_key: str | None = None
     pre_401_signal_key: str | None = None
+    current_match_level: str | None = None
+    current_signal_min_streak: int | None = None
 
 
 def get_research_overview(
@@ -206,6 +208,8 @@ def get_research_overview(
     account_type: str | None = None,
     current_signal_key: str | None = None,
     pre_401_signal_key: str | None = None,
+    current_match_level: str | None = None,
+    current_signal_min_streak: int | None = None,
 ) -> ResearchOverview:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=window_days)
@@ -214,6 +218,8 @@ def get_research_overview(
         account_type=account_type,
         current_signal_key=current_signal_key,
         pre_401_signal_key=pre_401_signal_key,
+        current_match_level=current_match_level,
+        current_signal_min_streak=current_signal_min_streak,
     )
     scope_filters = ResearchOverviewFilters(
         provider=provider,
@@ -677,7 +683,7 @@ def _build_current_signal_baseline(
         list[ResearchCurrentSignalGroupSample],
     ] = {}
     samples: list[ResearchCurrentSignalSample] = []
-    signal_accounts: list[tuple[Account, list[str], str]] = []
+    signal_candidates: list[tuple[Account, list[str], str]] = []
 
     for account in account_rows:
         signal_keys = _extract_account_signal_keys(account)
@@ -687,20 +693,15 @@ def _build_current_signal_baseline(
             continue
 
         pattern_key = "|".join(signal_keys)
-        group_key = (account.provider, account.account_type)
-        signal_counter.update(signal_keys)
-        pattern_counter[pattern_key] += 1
-        signal_group_counter[group_key] += 1
-        group_pattern_counter.setdefault(group_key, Counter())[pattern_key] += 1
-        signal_accounts.append((account, signal_keys, pattern_key))
+        signal_candidates.append((account, signal_keys, pattern_key))
 
     snapshots_by_account_id = _load_success_snapshots_by_account_id(
         db,
-        account_ids=[account.id for account, _, _ in signal_accounts],
+        account_ids=[account.id for account, _, _ in signal_candidates],
     )
     historical_candidates = _build_historical_signal_candidates(historical_event_rows)
 
-    for account, signal_keys, _ in signal_accounts:
+    for account, signal_keys, pattern_key in signal_candidates:
         group_key = (account.provider, account.account_type)
         consecutive_signal_snapshots, signal_started_at = _build_current_signal_streak(
             account=account,
@@ -710,6 +711,17 @@ def _build_current_signal_baseline(
             signal_keys=signal_keys,
             historical_candidates=historical_candidates,
         )
+        if filters.current_match_level and historical_match.level != filters.current_match_level:
+            continue
+        if (
+            filters.current_signal_min_streak is not None
+            and consecutive_signal_snapshots < filters.current_signal_min_streak
+        ):
+            continue
+        signal_counter.update(signal_keys)
+        pattern_counter[pattern_key] += 1
+        signal_group_counter[group_key] += 1
+        group_pattern_counter.setdefault(group_key, Counter())[pattern_key] += 1
         streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
         historical_match_counter[historical_match.level] += 1
         if consecutive_signal_snapshots >= 2:
@@ -1027,6 +1039,7 @@ _HISTORICAL_MATCH_LABELS = {
     "no_overlap": "与历史前序未重合",
     "no_history": "暂无历史 401 样本",
 }
+RESEARCH_HISTORICAL_MATCH_LEVELS = tuple(_HISTORICAL_MATCH_LABELS)
 _HISTORICAL_MATCH_PRIORITY = {
     "exact_pattern": 0,
     "covered_pattern": 1,

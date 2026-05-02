@@ -23,8 +23,23 @@ const CURRENT_SIGNAL_OPTIONS = [
   { key: "remaining_empty", label: "remaining <= 0" },
   { key: "status_message_present", label: "存在 status_message" },
 ] as const;
+const CURRENT_MATCH_OPTIONS = [
+  { key: "exact_pattern", label: "仅看完全同模式" },
+  { key: "covered_pattern", label: "仅看被历史覆盖" },
+  { key: "partial_overlap", label: "仅看部分重合" },
+  { key: "no_overlap", label: "仅看未重合" },
+  { key: "no_history", label: "仅看暂无历史样本" },
+] as const;
+const CURRENT_STREAK_OPTIONS = [
+  { value: "2", label: "连续至少 2 轮" },
+  { value: "3", label: "连续至少 3 轮" },
+  { value: "4", label: "连续至少 4 轮" },
+] as const;
 const currentSignalLabelMap = Object.fromEntries(
   CURRENT_SIGNAL_OPTIONS.map((item) => [item.key, item.label]),
+) as Record<string, string>;
+const currentMatchLabelMap = Object.fromEntries(
+  CURRENT_MATCH_OPTIONS.map((item) => [item.key, item.label]),
 ) as Record<string, string>;
 
 const loading = ref(false);
@@ -36,6 +51,8 @@ const filters = reactive({
   accountType: "",
   currentSignalKey: "",
   pre401SignalKey: "",
+  currentMatchLevel: "",
+  currentSignalMinStreak: "",
 });
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
@@ -62,6 +79,8 @@ const normalizedProvider = computed(() => filters.provider.trim());
 const normalizedAccountType = computed(() => filters.accountType.trim());
 const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim());
 const normalizedPre401SignalKey = computed(() => filters.pre401SignalKey.trim());
+const normalizedCurrentMatchLevel = computed(() => filters.currentMatchLevel.trim());
+const normalizedCurrentSignalMinStreak = computed(() => filters.currentSignalMinStreak.trim());
 const selectedCurrentSignalLabel = computed(() => {
   if (!normalizedCurrentSignalKey.value) {
     return "";
@@ -74,13 +93,27 @@ const selectedPre401SignalLabel = computed(() => {
   }
   return currentSignalLabelMap[normalizedPre401SignalKey.value] ?? normalizedPre401SignalKey.value;
 });
+const selectedCurrentMatchLabel = computed(() => {
+  if (!normalizedCurrentMatchLevel.value) {
+    return "";
+  }
+  return currentMatchLabelMap[normalizedCurrentMatchLevel.value] ?? normalizedCurrentMatchLevel.value;
+});
+const selectedCurrentSignalMinStreakLabel = computed(() => {
+  if (!normalizedCurrentSignalMinStreak.value) {
+    return "";
+  }
+  return `连续至少 ${normalizedCurrentSignalMinStreak.value} 轮`;
+});
 const hasScopedFilters = computed(
   () =>
     Boolean(
       normalizedProvider.value ||
         normalizedAccountType.value ||
         normalizedCurrentSignalKey.value ||
-        normalizedPre401SignalKey.value,
+        normalizedPre401SignalKey.value ||
+        normalizedCurrentMatchLevel.value ||
+        normalizedCurrentSignalMinStreak.value,
     ),
 );
 const scopeSummary = computed(() => {
@@ -98,14 +131,32 @@ const scopeSummary = computed(() => {
   if (selectedPre401SignalLabel.value) {
     segments.push(`前序信号=${selectedPre401SignalLabel.value}`);
   }
+  if (selectedCurrentMatchLabel.value) {
+    segments.push(`历史贴近=${selectedCurrentMatchLabel.value}`);
+  }
+  if (selectedCurrentSignalMinStreakLabel.value) {
+    segments.push(selectedCurrentSignalMinStreakLabel.value);
+  }
 
   return segments.length ? segments.join(" / ") : "全部账号";
 });
 const currentSignalScopeHint = computed(() => {
   if (!selectedCurrentSignalLabel.value) {
-    return "";
+    if (!selectedCurrentMatchLabel.value && !selectedCurrentSignalMinStreakLabel.value) {
+      return "";
+    }
   }
-  return `当前基线已按“${selectedCurrentSignalLabel.value}”收窄；下方仍会继续展示这些样本共现的其他信号，便于判断伴随模式。`;
+  const segments: string[] = [];
+  if (selectedCurrentSignalLabel.value) {
+    segments.push(`当前信号“${selectedCurrentSignalLabel.value}”`);
+  }
+  if (selectedCurrentMatchLabel.value) {
+    segments.push(`历史贴近度“${selectedCurrentMatchLabel.value}”`);
+  }
+  if (selectedCurrentSignalMinStreakLabel.value) {
+    segments.push(selectedCurrentSignalMinStreakLabel.value);
+  }
+  return `当前基线已按${segments.join(" + ")}收窄；下方仍会继续展示这些样本共现的其他信号，便于判断伴随模式。`;
 });
 const dominantCurrentSignalPattern = computed(
   () => overview.value?.current_signal_baseline.signal_pattern_breakdown[0] ?? null,
@@ -203,6 +254,10 @@ async function loadOverview() {
       account_type: normalizedAccountType.value || undefined,
       current_signal_key: normalizedCurrentSignalKey.value || undefined,
       pre_401_signal_key: normalizedPre401SignalKey.value || undefined,
+      current_match_level: normalizedCurrentMatchLevel.value || undefined,
+      current_signal_min_streak: normalizedCurrentSignalMinStreak.value
+        ? Number(normalizedCurrentSignalMinStreak.value)
+        : undefined,
     });
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : "加载研究数据失败";
@@ -216,6 +271,8 @@ function resetFilters() {
   filters.accountType = "";
   filters.currentSignalKey = "";
   filters.pre401SignalKey = "";
+  filters.currentMatchLevel = "";
+  filters.currentSignalMinStreak = "";
   void loadOverview();
 }
 
@@ -343,6 +400,24 @@ onMounted(() => {
           </select>
         </label>
         <label>
+          <span class="subtle-label">历史贴近</span>
+          <select v-model="filters.currentMatchLevel" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部贴近度</option>
+            <option v-for="item in CURRENT_MATCH_OPTIONS" :key="item.key" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span class="subtle-label">连续轮数</span>
+          <select v-model="filters.currentSignalMinStreak" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部</option>
+            <option v-for="item in CURRENT_STREAK_OPTIONS" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">窗口</span>
           <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
             <option :value="7">最近 7 天</option>
@@ -358,6 +433,9 @@ onMounted(() => {
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
     <p v-if="selectedCurrentSignalLabel" class="subtle-line">
       “当前信号”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
+    </p>
+    <p v-if="selectedCurrentMatchLabel || selectedCurrentSignalMinStreakLabel" class="subtle-line">
+      “历史贴近 / 连续轮数”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
     </p>
     <p v-if="selectedPre401SignalLabel" class="subtle-line">
       “前序信号”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。

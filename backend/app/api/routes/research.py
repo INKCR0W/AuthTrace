@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.research import RESEARCH_SIGNAL_KEYS, get_research_overview
+from app.repositories.research import (
+    RESEARCH_HISTORICAL_MATCH_LEVELS,
+    RESEARCH_SIGNAL_KEYS,
+    get_research_overview,
+)
 from app.schemas.research import (
     ResearchBucketCount,
     ResearchCombinationBreakdownItem,
@@ -32,6 +36,8 @@ def get_research_overview_api(
     account_type: str | None = Query(default=None),
     current_signal_key: str | None = Query(default=None),
     pre_401_signal_key: str | None = Query(default=None),
+    current_match_level: str | None = Query(default=None),
+    current_signal_min_streak: int | None = Query(default=None, ge=1, le=20),
 ) -> ResearchOverviewResponse:
     if current_signal_key is not None and current_signal_key not in RESEARCH_SIGNAL_KEYS:
         raise HTTPException(
@@ -43,6 +49,11 @@ def get_research_overview_api(
             status_code=422,
             detail=f"Unsupported pre_401_signal_key: {pre_401_signal_key}",
         )
+    if current_match_level is not None and current_match_level not in RESEARCH_HISTORICAL_MATCH_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported current_match_level: {current_match_level}",
+        )
 
     overview = get_research_overview(
         db,
@@ -51,6 +62,8 @@ def get_research_overview_api(
         account_type=account_type,
         current_signal_key=current_signal_key,
         pre_401_signal_key=pre_401_signal_key,
+        current_match_level=current_match_level,
+        current_signal_min_streak=current_signal_min_streak,
     )
     return ResearchOverviewResponse(
         window_days=overview.window_days,

@@ -2144,6 +2144,299 @@ def test_research_overview_api_prefers_latest_historical_event_for_same_pattern_
     app.dependency_overrides.clear()
 
 
+def test_research_overview_api_filters_current_baseline_by_match_level_and_streak() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=2),
+            scan_finished_at=base_time - timedelta(hours=2) + timedelta(minutes=5),
+            total_accounts=4,
+            eligible_accounts=4,
+            scanned_accounts=4,
+            success_accounts=4,
+            failed_accounts=0,
+            new_401_events=1,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        historical_exact = Account(
+            source_id=source.id,
+            auth_index="historical-exact",
+            name="Historical-Exact",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time - timedelta(minutes=5),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time - timedelta(minutes=5),
+        )
+        current_exact_streak_two = Account(
+            source_id=source.id,
+            auth_index="current-exact-streak-two",
+            name="Current-Exact-Streak-Two",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("95.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="same pattern",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        current_exact_streak_one = Account(
+            source_id=source.id,
+            auth_index="current-exact-streak-one",
+            name="Current-Exact-Streak-One",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("94.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="same pattern",
+            current_last_checked_at=base_time - timedelta(minutes=1),
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time - timedelta(minutes=1),
+        )
+        current_covered_streak_three = Account(
+            source_id=source.id,
+            auth_index="current-covered-streak-three",
+            name="Current-Covered-Streak-Three",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("93.00"),
+            current_allowed=False,
+            current_last_checked_at=base_time - timedelta(minutes=2),
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time - timedelta(minutes=2),
+        )
+        db.add_all(
+            [
+                historical_exact,
+                current_exact_streak_two,
+                current_exact_streak_one,
+                current_covered_streak_three,
+            ]
+        )
+        db.flush()
+
+        historical_snapshot = AccountSnapshot(
+            account_id=historical_exact.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=15),
+            created_at=base_time - timedelta(minutes=15),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="history sample",
+        )
+        current_exact_snapshot_latest = AccountSnapshot(
+            account_id=current_exact_streak_two.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=10),
+            created_at=base_time - timedelta(minutes=10),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("94.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="same pattern",
+        )
+        current_exact_snapshot_previous = AccountSnapshot(
+            account_id=current_exact_streak_two.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=20),
+            created_at=base_time - timedelta(minutes=20),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("93.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="same pattern",
+        )
+        current_covered_snapshot_latest = AccountSnapshot(
+            account_id=current_covered_streak_three.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=8),
+            created_at=base_time - timedelta(minutes=8),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("93.00"),
+            allowed=False,
+        )
+        current_covered_snapshot_middle = AccountSnapshot(
+            account_id=current_covered_streak_three.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=18),
+            created_at=base_time - timedelta(minutes=18),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("92.00"),
+            allowed=False,
+        )
+        current_covered_snapshot_oldest = AccountSnapshot(
+            account_id=current_covered_streak_three.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=28),
+            created_at=base_time - timedelta(minutes=28),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("91.00"),
+            allowed=False,
+        )
+        db.add_all(
+            [
+                historical_snapshot,
+                current_exact_snapshot_latest,
+                current_exact_snapshot_previous,
+                current_covered_snapshot_latest,
+                current_covered_snapshot_middle,
+                current_covered_snapshot_oldest,
+            ]
+        )
+        db.flush()
+
+        db.add(
+            AccountEvent(
+                account_id=historical_exact.id,
+                event_type="became_401",
+                event_time=base_time - timedelta(minutes=5),
+                related_snapshot_id=historical_snapshot.id,
+                previous_snapshot_id=historical_snapshot.id,
+                from_status_code=200,
+                to_status_code=401,
+                from_is_401=False,
+                to_is_401=True,
+                from_disabled=False,
+                to_disabled=False,
+                created_at=base_time - timedelta(minutes=5),
+            )
+        )
+        db.commit()
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&current_match_level=exact_pattern&current_signal_min_streak=2",
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["became_401_events"] == 1
+    assert payload["pre_401_insights"]["sampled_events"] == 1
+    baseline = payload["current_signal_baseline"]
+    assert baseline["observed_accounts"] == 3
+    assert baseline["signal_accounts"] == 1
+    assert baseline["historical_match_breakdown"] == [
+        {
+            "key": "exact_pattern",
+            "label": "与历史前序完全同模式",
+            "count": 1,
+        }
+    ]
+    assert baseline["signal_streak_breakdown"] == [
+        {
+            "key": "2_3",
+            "label": "连续 2-3 轮",
+            "count": 1,
+        }
+    ]
+    assert baseline["current_signal_group_breakdown"] == [
+        {
+            "label": "openai / chatgpt",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "observed_accounts": 3,
+            "signal_accounts": 1,
+            "signal_rate": 33.33,
+            "multi_round_signal_accounts": 1,
+            "historical_like_accounts": 1,
+            "historical_like_rate": 100.0,
+            "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "top_historical_like_samples": [
+                {
+                    "account_id": 2,
+                    "account_name": "Current-Exact-Streak-Two",
+                    "current_last_checked_at": "2026-05-02T12:00:00Z",
+                    "signal_labels": [
+                        "周额度 >= 90%",
+                        "limit_reached=true",
+                        "allowed=false",
+                        "存在 status_message",
+                    ],
+                    "consecutive_signal_snapshots": 2,
+                    "historical_match_level": "exact_pattern",
+                    "historical_match_label": "与历史前序完全同模式",
+                    "historical_match_rate": 100.0,
+                    "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                    "historical_match_event_id": 1,
+                    "historical_match_event_account_id": 1,
+                    "historical_match_event_account_name": "Historical-Exact",
+                    "historical_match_event_time": "2026-05-02T11:55:00Z",
+                }
+            ],
+        }
+    ]
+    assert [item["account_name"] for item in baseline["recent_samples"]] == [
+        "Current-Exact-Streak-Two",
+    ]
+    assert baseline["recent_samples"][0]["consecutive_signal_snapshots"] == 2
+    assert baseline["recent_samples"][0]["historical_match_level"] == "exact_pattern"
+
+    app.dependency_overrides.clear()
+
+
 def test_research_overview_api_rejects_unknown_current_signal_key() -> None:
     session_factory = _create_session_factory()
 
@@ -2169,6 +2462,35 @@ def test_research_overview_api_rejects_unknown_current_signal_key() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Unsupported current_signal_key: unknown_signal"
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_rejects_unknown_current_match_level() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    response = asyncio.run(
+        _request("GET", "/api/v1/research/overview?window_days=7&current_match_level=unknown_level")
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported current_match_level: unknown_level"
 
     app.dependency_overrides.clear()
 
