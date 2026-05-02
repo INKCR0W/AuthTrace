@@ -129,6 +129,19 @@ class ResearchCurrentSignalSample:
 
 
 @dataclass(slots=True)
+class ResearchCurrentSignalGroupSample:
+    account_id: int
+    account_name: str
+    current_last_checked_at: datetime | None
+    signal_labels: list[str]
+    consecutive_signal_snapshots: int
+    historical_match_level: str
+    historical_match_label: str
+    historical_match_rate: float
+    historical_best_pattern: str | None
+
+
+@dataclass(slots=True)
 class ResearchCurrentSignalGroupBreakdownItem:
     label: str
     provider: str | None
@@ -140,6 +153,7 @@ class ResearchCurrentSignalGroupBreakdownItem:
     historical_like_accounts: int
     historical_like_rate: float
     top_signal_pattern: str | None
+    top_historical_like_samples: list[ResearchCurrentSignalGroupSample]
 
 
 @dataclass(slots=True)
@@ -644,6 +658,10 @@ def _build_current_signal_baseline(
     multi_round_group_counter = Counter[tuple[str | None, str | None]]()
     historical_like_group_counter = Counter[tuple[str | None, str | None]]()
     group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]] = {}
+    group_historical_like_samples: dict[
+        tuple[str | None, str | None],
+        list[ResearchCurrentSignalGroupSample],
+    ] = {}
     samples: list[ResearchCurrentSignalSample] = []
     signal_accounts: list[tuple[Account, list[str], str]] = []
 
@@ -691,43 +709,56 @@ def _build_current_signal_baseline(
         status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
         if status_message_excerpt:
             status_counter[status_message_excerpt] += 1
-        samples.append(
-            ResearchCurrentSignalSample(
-                account_id=account.id,
-                account_name=account.name,
-                provider=account.provider,
-                account_type=account.account_type,
-                current_last_checked_at=(
-                    _ensure_utc(account.current_last_checked_at)
-                    if account.current_last_checked_at is not None
-                    else None
-                ),
-                current_weekly_used_percent=account.current_weekly_used_percent,
-                current_short_used_percent=account.current_short_used_percent,
-                current_remaining=account.current_remaining,
-                current_limit_reached=account.current_limit_reached,
-                current_allowed=account.current_allowed,
-                status_message_excerpt=_build_status_message_excerpt(account.status_message),
-                signal_labels=[_SIGNAL_LABELS[key] for key in signal_keys],
-                consecutive_signal_snapshots=consecutive_signal_snapshots,
-                signal_started_at=signal_started_at,
-                historical_match_level=historical_match.level,
-                historical_match_label=_HISTORICAL_MATCH_LABELS[historical_match.level],
-                historical_match_rate=historical_match.rate,
-                historical_best_pattern=historical_match.best_pattern_label,
-            )
+        current_sample = ResearchCurrentSignalSample(
+            account_id=account.id,
+            account_name=account.name,
+            provider=account.provider,
+            account_type=account.account_type,
+            current_last_checked_at=(
+                _ensure_utc(account.current_last_checked_at)
+                if account.current_last_checked_at is not None
+                else None
+            ),
+            current_weekly_used_percent=account.current_weekly_used_percent,
+            current_short_used_percent=account.current_short_used_percent,
+            current_remaining=account.current_remaining,
+            current_limit_reached=account.current_limit_reached,
+            current_allowed=account.current_allowed,
+            status_message_excerpt=_build_status_message_excerpt(account.status_message),
+            signal_labels=[_SIGNAL_LABELS[key] for key in signal_keys],
+            consecutive_signal_snapshots=consecutive_signal_snapshots,
+            signal_started_at=signal_started_at,
+            historical_match_level=historical_match.level,
+            historical_match_label=_HISTORICAL_MATCH_LABELS[historical_match.level],
+            historical_match_rate=historical_match.rate,
+            historical_best_pattern=historical_match.best_pattern_label,
         )
+        samples.append(current_sample)
+        if historical_match.level in _HISTORICAL_LIKE_LEVELS:
+            group_historical_like_samples.setdefault(group_key, []).append(
+                ResearchCurrentSignalGroupSample(
+                    account_id=current_sample.account_id,
+                    account_name=current_sample.account_name,
+                    current_last_checked_at=current_sample.current_last_checked_at,
+                    signal_labels=current_sample.signal_labels,
+                    consecutive_signal_snapshots=current_sample.consecutive_signal_snapshots,
+                    historical_match_level=current_sample.historical_match_level,
+                    historical_match_label=current_sample.historical_match_label,
+                    historical_match_rate=current_sample.historical_match_rate,
+                    historical_best_pattern=current_sample.historical_best_pattern,
+                )
+            )
 
     samples.sort(
-        key=lambda item: (
-            _historical_match_sort_key(item.historical_match_level),
-            -item.historical_match_rate,
-            -item.consecutive_signal_snapshots,
-            -len(item.signal_labels),
-            -(item.current_weekly_used_percent or Decimal("-1")),
-            -(item.current_short_used_percent or Decimal("-1")),
-            -_datetime_to_timestamp(item.current_last_checked_at),
-            item.account_name,
+        key=lambda item: _build_current_signal_sort_key(
+            historical_match_level=item.historical_match_level,
+            historical_match_rate=item.historical_match_rate,
+            consecutive_signal_snapshots=item.consecutive_signal_snapshots,
+            signal_label_count=len(item.signal_labels),
+            current_weekly_used_percent=item.current_weekly_used_percent,
+            current_short_used_percent=item.current_short_used_percent,
+            current_last_checked_at=item.current_last_checked_at,
+            account_name=item.account_name,
         )
     )
 
@@ -744,6 +775,7 @@ def _build_current_signal_baseline(
             multi_round_group_counter=multi_round_group_counter,
             historical_like_group_counter=historical_like_group_counter,
             group_pattern_counter=group_pattern_counter,
+            group_historical_like_samples=group_historical_like_samples,
         ),
         top_status_messages=_build_top_status_messages(status_counter),
         recent_samples=samples[:10],
@@ -878,6 +910,10 @@ def _build_current_signal_group_breakdown(
     multi_round_group_counter: Counter[tuple[str | None, str | None]],
     historical_like_group_counter: Counter[tuple[str | None, str | None]],
     group_pattern_counter: dict[tuple[str | None, str | None], Counter[str]],
+    group_historical_like_samples: dict[
+        tuple[str | None, str | None],
+        list[ResearchCurrentSignalGroupSample],
+    ],
 ) -> list[ResearchCurrentSignalGroupBreakdownItem]:
     items: list[ResearchCurrentSignalGroupBreakdownItem] = []
 
@@ -885,6 +921,19 @@ def _build_current_signal_group_breakdown(
         provider, account_type = group_key
         observed_accounts = observed_group_counter.get(group_key, 0)
         top_pattern = _pick_top_signal_pattern(group_pattern_counter.get(group_key, Counter()))
+        top_historical_like_samples = sorted(
+            group_historical_like_samples.get(group_key, []),
+            key=lambda item: _build_current_signal_sort_key(
+                historical_match_level=item.historical_match_level,
+                historical_match_rate=item.historical_match_rate,
+                consecutive_signal_snapshots=item.consecutive_signal_snapshots,
+                signal_label_count=len(item.signal_labels),
+                current_weekly_used_percent=None,
+                current_short_used_percent=None,
+                current_last_checked_at=item.current_last_checked_at,
+                account_name=item.account_name,
+            ),
+        )[:3]
         items.append(
             ResearchCurrentSignalGroupBreakdownItem(
                 label=_build_combo_label(provider=provider, account_type=account_type),
@@ -903,6 +952,7 @@ def _build_current_signal_group_breakdown(
                     denominator=signal_accounts,
                 ),
                 top_signal_pattern=top_pattern,
+                top_historical_like_samples=top_historical_like_samples,
             )
         )
 
@@ -1220,6 +1270,29 @@ def _datetime_to_timestamp(value: datetime | None) -> float:
 
 def _historical_match_sort_key(level: str) -> int:
     return _HISTORICAL_MATCH_PRIORITY.get(level, len(_HISTORICAL_MATCH_PRIORITY))
+
+
+def _build_current_signal_sort_key(
+    *,
+    historical_match_level: str,
+    historical_match_rate: float,
+    consecutive_signal_snapshots: int,
+    signal_label_count: int,
+    current_weekly_used_percent: Decimal | None,
+    current_short_used_percent: Decimal | None,
+    current_last_checked_at: datetime | None,
+    account_name: str,
+) -> tuple[int, float, int, int, Decimal, Decimal, float, str]:
+    return (
+        _historical_match_sort_key(historical_match_level),
+        -historical_match_rate,
+        -consecutive_signal_snapshots,
+        -signal_label_count,
+        -(current_weekly_used_percent or Decimal("-1")),
+        -(current_short_used_percent or Decimal("-1")),
+        -_datetime_to_timestamp(current_last_checked_at),
+        account_name,
+    )
 
 
 def _build_gap_minutes(*, event_time: datetime, previous_checked_at: datetime) -> int:

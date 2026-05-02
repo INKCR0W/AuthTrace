@@ -311,6 +311,14 @@ select {
   border: 1px solid var(--line);
 }
 
+.compact-observations {
+  gap: 10px;
+}
+
+.compact-observations p {
+  margin: 4px 0 0;
+}
+
 .risk-headline {
   margin: 0;
   font-family: Georgia, "Times New Roman", serif;

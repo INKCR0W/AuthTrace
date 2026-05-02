@@ -10,6 +10,7 @@ import { formatCount, formatDateTime, formatMinutesSpan, formatPercent, formatRe
 import type {
   ResearchBucketCount,
   ResearchCurrentSignalSample,
+  ResearchCurrentSignalGroupSample,
   ResearchEventSample,
   ResearchOverviewResponse,
 } from "@/types/api";
@@ -275,6 +276,10 @@ function currentSignalHistoricalMatchSummary(item: ResearchCurrentSignalSample) 
   }
 
   return `${coverage}，最接近历史模式：${item.historical_best_pattern}`;
+}
+
+function currentGroupHistoricalLikeSummary(item: ResearchCurrentSignalGroupSample) {
+  return `${item.historical_match_label} / 连续 ${formatCount(item.consecutive_signal_snapshots)} 轮`;
 }
 
 onMounted(() => {
@@ -739,6 +744,7 @@ onMounted(() => {
                 <th>信号率</th>
                 <th>连续 2 轮+</th>
                 <th>历史高贴近</th>
+                <th>高贴近样本</th>
                 <th>主导模式</th>
               </tr>
             </thead>
@@ -760,6 +766,23 @@ onMounted(() => {
                 <td>
                   {{ formatCount(item.historical_like_accounts) }}
                   <p class="subtle-line">{{ formatPercent(item.historical_like_rate) }}</p>
+                </td>
+                <td>
+                  <div v-if="item.top_historical_like_samples.length" class="observation-list compact-observations">
+                    <div
+                      v-for="sample in item.top_historical_like_samples"
+                      :key="`current-group-sample-${item.label}-${sample.account_id}`"
+                    >
+                      <RouterLink class="inline-link" :to="`/accounts/${sample.account_id}`">
+                        {{ sample.account_name }}
+                      </RouterLink>
+                      <p class="subtle-line">{{ currentGroupHistoricalLikeSummary(sample) }}</p>
+                      <p v-if="sample.historical_best_pattern" class="subtle-line">
+                        最接近：{{ sample.historical_best_pattern }}
+                      </p>
+                    </div>
+                  </div>
+                  <p v-else class="subtle-line">暂无高贴近样本</p>
                 </td>
                 <td>{{ item.top_signal_pattern ?? "未归纳" }}</td>
               </tr>

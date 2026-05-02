@@ -136,6 +136,18 @@ export interface ResearchCurrentSignalSample {
   historical_best_pattern: string | null;
 }
 
+export interface ResearchCurrentSignalGroupSample {
+  account_id: number;
+  account_name: string;
+  current_last_checked_at: string | null;
+  signal_labels: string[];
+  consecutive_signal_snapshots: number;
+  historical_match_level: string;
+  historical_match_label: string;
+  historical_match_rate: number;
+  historical_best_pattern: string | null;
+}
+
 export interface ResearchCurrentSignalGroupBreakdownItem {
   label: string;
   provider: string | null;
@@ -147,6 +159,7 @@ export interface ResearchCurrentSignalGroupBreakdownItem {
   historical_like_accounts: number;
   historical_like_rate: number;
   top_signal_pattern: string | null;
+  top_historical_like_samples: ResearchCurrentSignalGroupSample[];
 }
 
 export interface ResearchCurrentSignalBaseline {

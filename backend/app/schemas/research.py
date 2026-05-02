@@ -127,6 +127,20 @@ class ResearchCurrentSignalSample(BaseModel):
     historical_best_pattern: str | None = None
 
 
+class ResearchCurrentSignalGroupSample(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: int
+    account_name: str
+    current_last_checked_at: datetime | None = None
+    signal_labels: list[str] = Field(default_factory=list)
+    consecutive_signal_snapshots: int
+    historical_match_level: str
+    historical_match_label: str
+    historical_match_rate: float
+    historical_best_pattern: str | None = None
+
+
 class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,6 +154,7 @@ class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
     historical_like_accounts: int
     historical_like_rate: float
     top_signal_pattern: str | None = None
+    top_historical_like_samples: list[ResearchCurrentSignalGroupSample] = Field(default_factory=list)
 
 
 class ResearchCurrentSignalBaseline(BaseModel):

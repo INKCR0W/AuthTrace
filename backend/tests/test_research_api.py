@@ -928,6 +928,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "top_historical_like_samples": [],
         }
     ]
     assert baseline["top_status_messages"] == [
@@ -1107,6 +1108,7 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "top_historical_like_samples": [],
         }
     ]
     assert baseline["top_status_messages"] == [
@@ -1325,6 +1327,7 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
             "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
+            "top_historical_like_samples": [],
         }
     ]
     assert baseline["top_status_messages"] == [
@@ -1891,6 +1894,38 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
             "historical_like_accounts": 2,
             "historical_like_rate": 50.0,
             "top_signal_pattern": "remaining <= 0",
+            "top_historical_like_samples": [
+                {
+                    "account_id": 3,
+                    "account_name": "Current-Exact",
+                    "current_last_checked_at": "2026-05-02T12:00:00Z",
+                    "signal_labels": [
+                        "周额度 >= 90%",
+                        "limit_reached=true",
+                        "allowed=false",
+                        "存在 status_message",
+                    ],
+                    "consecutive_signal_snapshots": 1,
+                    "historical_match_level": "exact_pattern",
+                    "historical_match_label": "与历史前序完全同模式",
+                    "historical_match_rate": 100.0,
+                    "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                },
+                {
+                    "account_id": 4,
+                    "account_name": "Current-Covered",
+                    "current_last_checked_at": "2026-05-02T11:59:00Z",
+                    "signal_labels": [
+                        "周额度 >= 90%",
+                        "allowed=false",
+                    ],
+                    "consecutive_signal_snapshots": 1,
+                    "historical_match_level": "covered_pattern",
+                    "historical_match_label": "被历史前序模式覆盖",
+                    "historical_match_rate": 100.0,
+                    "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+                },
+            ],
         }
     ]
     assert [item["account_name"] for item in baseline["recent_samples"]] == [
@@ -2071,6 +2106,7 @@ def test_research_overview_api_stabilizes_group_top_pattern_on_tie() -> None:
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
             "top_signal_pattern": "allowed=false",
+            "top_historical_like_samples": [],
         }
     ]
 
@@ -2228,7 +2264,11 @@ def test_research_overview_api_prioritizes_groups_with_more_historical_like_samp
     ]
     assert group_breakdown[0]["historical_like_accounts"] == 1
     assert group_breakdown[0]["historical_like_rate"] == 100.0
+    assert [item["account_name"] for item in group_breakdown[0]["top_historical_like_samples"]] == [
+        "Current-OpenAI-Exact",
+    ]
     assert group_breakdown[1]["historical_like_accounts"] == 0
     assert group_breakdown[1]["historical_like_rate"] == 0.0
+    assert group_breakdown[1]["top_historical_like_samples"] == []
 
     app.dependency_overrides.clear()
