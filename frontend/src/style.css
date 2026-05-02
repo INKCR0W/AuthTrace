@@ -311,6 +311,14 @@ select {
   border: 1px solid var(--line);
 }
 
+.observation-item-action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
 .compact-observations {
   gap: 10px;
 }
@@ -457,6 +465,10 @@ select {
 .compact-button {
   min-height: 30px;
   padding: 6px 12px;
+}
+
+.mini-action-button {
+  white-space: nowrap;
 }
 
 .ghost-button:disabled {
@@ -651,6 +663,21 @@ select {
   border: 1px solid var(--line);
   color: var(--ink);
   font-size: 0.9rem;
+}
+
+.signal-chip-action {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.table-action-cell {
+  min-width: 120px;
+}
+
+.table-action-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .sample-panel {

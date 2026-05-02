@@ -166,6 +166,7 @@ class ResearchCurrentSignalGroupBreakdownItem:
     multi_round_signal_accounts: int
     historical_like_accounts: int
     historical_like_rate: float
+    top_signal_pattern_key: str | None
     top_signal_pattern: str | None
     top_historical_like_samples: list[ResearchCurrentSignalGroupSample]
 
@@ -980,7 +981,8 @@ def _build_current_signal_group_breakdown(
     for group_key, signal_accounts in signal_group_counter.items():
         provider, account_type = group_key
         observed_accounts = observed_group_counter.get(group_key, 0)
-        top_pattern = _pick_top_signal_pattern(group_pattern_counter.get(group_key, Counter()))
+        top_pattern_key = _pick_top_signal_pattern_key(group_pattern_counter.get(group_key, Counter()))
+        top_pattern = None if top_pattern_key is None else _build_signal_pattern_label(top_pattern_key)
         top_historical_like_samples = sorted(
             group_historical_like_samples.get(group_key, []),
             key=lambda item: _build_current_signal_sort_key(
@@ -1011,6 +1013,7 @@ def _build_current_signal_group_breakdown(
                     numerator=historical_like_group_counter.get(group_key, 0),
                     denominator=signal_accounts,
                 ),
+                top_signal_pattern_key=top_pattern_key,
                 top_signal_pattern=top_pattern,
                 top_historical_like_samples=top_historical_like_samples,
             )
@@ -1057,7 +1060,7 @@ def normalize_research_signal_pattern_key(pattern: str) -> str:
     return "|".join(normalized_parts)
 
 
-def _pick_top_signal_pattern(counter: Counter[str]) -> str | None:
+def _pick_top_signal_pattern_key(counter: Counter[str]) -> str | None:
     if not counter:
         return None
 
@@ -1065,7 +1068,7 @@ def _pick_top_signal_pattern(counter: Counter[str]) -> str | None:
         counter.items(),
         key=lambda item: (-item[1], _build_signal_pattern_label(item[0]), item[0]),
     )
-    return _build_signal_pattern_label(pattern)
+    return pattern
 
 
 _SIGNAL_LABELS = {

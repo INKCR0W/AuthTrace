@@ -317,6 +317,104 @@ const leadingHistoricalLikeGroupSummary = computed(() => {
   return `${item.label} 当前有 ${formatCount(item.historical_like_accounts)} 个样本与历史 401 前模式高度贴近，占该组研究信号账号的 ${formatPercent(item.historical_like_rate)}。`;
 });
 
+function syncFilters(next: Partial<typeof filters>) {
+  if (next.provider !== undefined) {
+    filters.provider = next.provider;
+  }
+  if (next.accountType !== undefined) {
+    filters.accountType = next.accountType;
+  }
+  if (next.currentSignalKey !== undefined) {
+    filters.currentSignalKey = next.currentSignalKey;
+  }
+  if (next.currentSignalPatternKey !== undefined) {
+    filters.currentSignalPatternKey = next.currentSignalPatternKey;
+  }
+  if (next.pre401SignalKey !== undefined) {
+    filters.pre401SignalKey = next.pre401SignalKey;
+  }
+  if (next.pre401SignalPatternKey !== undefined) {
+    filters.pre401SignalPatternKey = next.pre401SignalPatternKey;
+  }
+  if (next.currentMatchLevel !== undefined) {
+    filters.currentMatchLevel = next.currentMatchLevel;
+  }
+  if (next.currentSignalMinStreak !== undefined) {
+    filters.currentSignalMinStreak = next.currentSignalMinStreak;
+  }
+}
+
+function applyCurrentSignalFilter(signalKey: string) {
+  syncFilters({
+    currentSignalKey: signalKey,
+    currentSignalPatternKey: "",
+  });
+  void loadOverview();
+}
+
+function applyCurrentSignalPatternFilter(patternKey: string) {
+  syncFilters({
+    currentSignalKey: "",
+    currentSignalPatternKey: patternKey,
+  });
+  void loadOverview();
+}
+
+function applyPre401SignalFilter(signalKey: string) {
+  syncFilters({
+    pre401SignalKey: signalKey,
+    pre401SignalPatternKey: "",
+  });
+  void loadOverview();
+}
+
+function applyPre401SignalPatternFilter(patternKey: string) {
+  syncFilters({
+    pre401SignalKey: "",
+    pre401SignalPatternKey: patternKey,
+  });
+  void loadOverview();
+}
+
+function applyCurrentMatchLevelFilter(matchLevel: string) {
+  syncFilters({
+    currentMatchLevel: matchLevel,
+  });
+  void loadOverview();
+}
+
+function applyScopeFilter(provider: string | null, accountType: string | null) {
+  syncFilters({
+    provider: provider ?? "",
+    accountType: accountType ?? "",
+  });
+  void loadOverview();
+}
+
+function isCurrentSignalFilterActive(signalKey: string) {
+  return normalizedCurrentSignalKey.value === signalKey;
+}
+
+function isCurrentSignalPatternFilterActive(patternKey: string) {
+  return normalizedCurrentSignalPatternKey.value === patternKey;
+}
+
+function isPre401SignalFilterActive(signalKey: string) {
+  return normalizedPre401SignalKey.value === signalKey;
+}
+
+function isPre401SignalPatternFilterActive(patternKey: string) {
+  return normalizedPre401SignalPatternKey.value === patternKey;
+}
+
+function isCurrentMatchLevelFilterActive(matchLevel: string) {
+  return normalizedCurrentMatchLevel.value === matchLevel;
+}
+
+function isScopeFilterActive(provider: string | null, accountType: string | null) {
+  return normalizedProvider.value === (provider ?? "") && normalizedAccountType.value === (accountType ?? "");
+}
+
 async function loadOverview() {
   loading.value = true;
   error.value = "";
@@ -627,9 +725,17 @@ onMounted(() => {
             <div
               v-for="item in overview.pre_401_insights.signal_breakdown"
               :key="item.key"
-              class="signal-chip"
+              class="signal-chip signal-chip-action"
             >
-              {{ bucketSummary(item) }}
+              <span>{{ bucketSummary(item) }}</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isPre401SignalFilterActive(item.key)"
+                @click="applyPre401SignalFilter(item.key)"
+              >
+                {{ isPre401SignalFilterActive(item.key) ? "已筛到前序信号" : "筛到前序信号" }}
+              </button>
             </div>
           </div>
 
@@ -645,13 +751,21 @@ onMounted(() => {
             class="observation-list"
           >
             <p v-if="overview.pre_401_insights.signal_pattern_breakdown.length" class="subtle-label">高频前序信号组合</p>
-            <p
+            <div
               v-for="item in overview.pre_401_insights.signal_pattern_breakdown"
               :key="`pre-pattern-${item.key}`"
-              class="observation-item"
+              class="observation-item observation-item-action"
             >
-              {{ item.label }} · {{ formatCount(item.count) }} 次
-            </p>
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 次</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isPre401SignalPatternFilterActive(item.key)"
+                @click="applyPre401SignalPatternFilter(item.key)"
+              >
+                {{ isPre401SignalPatternFilterActive(item.key) ? "已筛到前序模式" : "筛到前序模式" }}
+              </button>
+            </div>
 
             <p v-if="overview.pre_401_insights.top_status_messages.length" class="subtle-label">高频 status_message</p>
             <p
@@ -701,9 +815,17 @@ onMounted(() => {
             <div
               v-for="item in overview.current_signal_baseline.signal_breakdown"
               :key="item.key"
-              class="signal-chip"
+              class="signal-chip signal-chip-action"
             >
-              {{ bucketSummary(item) }}
+              <span>{{ bucketSummary(item) }}</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentSignalFilterActive(item.key)"
+                @click="applyCurrentSignalFilter(item.key)"
+              >
+                {{ isCurrentSignalFilterActive(item.key) ? "已筛到当前信号" : "筛到当前信号" }}
+              </button>
             </div>
           </div>
           <p v-else class="feedback">当前筛选范围内仍为非 `401` 的账号里，还没有留下需要继续跟踪的研究信号。</p>
@@ -721,13 +843,21 @@ onMounted(() => {
 
           <div v-if="overview.current_signal_baseline.historical_match_breakdown.length" class="observation-list">
             <p class="subtle-label">与历史 401 前样本的贴近程度</p>
-            <p
+            <div
               v-for="item in overview.current_signal_baseline.historical_match_breakdown"
               :key="`historical-match-${item.key}`"
-              class="observation-item"
+              class="observation-item observation-item-action"
             >
-              {{ item.label }} · {{ formatCount(item.count) }} 个账号
-            </p>
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 个账号</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentMatchLevelFilterActive(item.key)"
+                @click="applyCurrentMatchLevelFilter(item.key)"
+              >
+                {{ isCurrentMatchLevelFilterActive(item.key) ? "已筛到贴近度" : "筛到贴近度" }}
+              </button>
+            </div>
           </div>
 
           <div
@@ -743,13 +873,21 @@ onMounted(() => {
             >
               高频信号组合
             </p>
-            <p
+            <div
               v-for="item in overview.current_signal_baseline.signal_pattern_breakdown"
               :key="`pattern-${item.key}`"
-              class="observation-item"
+              class="observation-item observation-item-action"
             >
-              {{ item.label }} · {{ formatCount(item.count) }} 个账号
-            </p>
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 个账号</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentSignalPatternFilterActive(item.key)"
+                @click="applyCurrentSignalPatternFilter(item.key)"
+              >
+                {{ isCurrentSignalPatternFilterActive(item.key) ? "已筛到当前模式" : "筛到当前模式" }}
+              </button>
+            </div>
 
             <p
               v-if="overview.current_signal_baseline.top_status_messages.length"
@@ -796,6 +934,7 @@ onMounted(() => {
                 <th>当前基线账号</th>
                 <th>当前命中率</th>
                 <th>历史-当前</th>
+                <th>下钻</th>
               </tr>
             </thead>
             <tbody>
@@ -808,6 +947,26 @@ onMounted(() => {
                 <td>{{ formatCount(item.current_count) }}</td>
                 <td>{{ formatPercent(item.current_rate) }}</td>
                 <td>{{ formatPercent(item.rate_gap) }}</td>
+                <td class="table-action-cell">
+                  <div class="table-action-stack">
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isCurrentSignalFilterActive(item.key)"
+                      @click="applyCurrentSignalFilter(item.key)"
+                    >
+                      当前
+                    </button>
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isPre401SignalFilterActive(item.key)"
+                      @click="applyPre401SignalFilter(item.key)"
+                    >
+                      前序
+                    </button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -842,6 +1001,7 @@ onMounted(() => {
                 <th>当前基线账号</th>
                 <th>当前命中率</th>
                 <th>历史-当前</th>
+                <th>下钻</th>
               </tr>
             </thead>
             <tbody>
@@ -854,6 +1014,26 @@ onMounted(() => {
                 <td>{{ formatCount(item.current_count) }}</td>
                 <td>{{ formatPercent(item.current_rate) }}</td>
                 <td>{{ formatPercent(item.rate_gap) }}</td>
+                <td class="table-action-cell">
+                  <div class="table-action-stack">
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isCurrentSignalPatternFilterActive(item.key)"
+                      @click="applyCurrentSignalPatternFilter(item.key)"
+                    >
+                      当前
+                    </button>
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isPre401SignalPatternFilterActive(item.key)"
+                      @click="applyPre401SignalPatternFilter(item.key)"
+                    >
+                      前序
+                    </button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -911,6 +1091,7 @@ onMounted(() => {
                 <th>窗口内 401</th>
                 <th>受影响账号</th>
                 <th>最近一次</th>
+                <th>范围</th>
               </tr>
             </thead>
             <tbody>
@@ -927,6 +1108,16 @@ onMounted(() => {
                 <td>{{ formatCount(item.became_401_events) }}</td>
                 <td>{{ formatCount(item.affected_accounts) }}</td>
                 <td>{{ formatDateTime(item.last_became_401_at) }}</td>
+                <td class="table-action-cell">
+                  <button
+                    class="ghost-button compact-button mini-action-button"
+                    type="button"
+                    :disabled="isScopeFilterActive(item.provider, item.account_type)"
+                    @click="applyScopeFilter(item.provider, item.account_type)"
+                  >
+                    {{ isScopeFilterActive(item.provider, item.account_type) ? "已应用组合" : "应用组合" }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -964,6 +1155,7 @@ onMounted(() => {
                 <th>历史高贴近</th>
                 <th>高贴近样本</th>
                 <th>主导模式</th>
+                <th>下钻</th>
               </tr>
             </thead>
             <tbody>
@@ -1011,6 +1203,27 @@ onMounted(() => {
                   <p v-else class="subtle-line">暂无高贴近样本</p>
                 </td>
                 <td>{{ item.top_signal_pattern ?? "未归纳" }}</td>
+                <td class="table-action-cell">
+                  <div class="table-action-stack">
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isScopeFilterActive(item.provider, item.account_type)"
+                      @click="applyScopeFilter(item.provider, item.account_type)"
+                    >
+                      组合
+                    </button>
+                    <button
+                      v-if="item.top_signal_pattern_key"
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isCurrentSignalPatternFilterActive(item.top_signal_pattern_key)"
+                      @click="applyCurrentSignalPatternFilter(item.top_signal_pattern_key)"
+                    >
+                      主导模式
+                    </button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>

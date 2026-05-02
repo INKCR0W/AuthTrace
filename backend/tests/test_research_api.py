@@ -929,6 +929,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "multi_round_signal_accounts": 1,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_signal_pattern_key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
             "top_historical_like_samples": [],
         }
@@ -1116,6 +1117,7 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_signal_pattern_key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
             "top_historical_like_samples": [],
         }
@@ -1342,6 +1344,7 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "multi_round_signal_accounts": 1,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_signal_pattern_key": "short_ge_90|limit_reached|status_message_present",
             "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
             "top_historical_like_samples": [],
         }
@@ -1495,6 +1498,7 @@ def test_research_overview_api_applies_current_signal_pattern_key_filter() -> No
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_signal_pattern_key": "short_ge_90|limit_reached|status_message_present",
             "top_signal_pattern": "短周期 >= 90% / limit_reached=true / 存在 status_message",
             "top_historical_like_samples": [],
         }
@@ -2164,6 +2168,7 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 2,
             "historical_like_rate": 50.0,
+            "top_signal_pattern_key": "remaining_empty",
             "top_signal_pattern": "remaining <= 0",
             "top_historical_like_samples": [
                 {
@@ -2734,6 +2739,7 @@ def test_research_overview_api_filters_current_baseline_by_match_level_and_strea
             "multi_round_signal_accounts": 1,
             "historical_like_accounts": 1,
             "historical_like_rate": 100.0,
+            "top_signal_pattern_key": "weekly_ge_90|limit_reached|allowed_false|status_message_present",
             "top_signal_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
             "top_historical_like_samples": [
                 {
@@ -3020,6 +3026,7 @@ def test_research_overview_api_stabilizes_group_top_pattern_on_tie() -> None:
             "multi_round_signal_accounts": 0,
             "historical_like_accounts": 0,
             "historical_like_rate": 0.0,
+            "top_signal_pattern_key": "allowed_false",
             "top_signal_pattern": "allowed=false",
             "top_historical_like_samples": [],
         }
@@ -3179,11 +3186,13 @@ def test_research_overview_api_prioritizes_groups_with_more_historical_like_samp
     ]
     assert group_breakdown[0]["historical_like_accounts"] == 1
     assert group_breakdown[0]["historical_like_rate"] == 100.0
+    assert group_breakdown[0]["top_signal_pattern_key"] == "weekly_ge_90|limit_reached|allowed_false|status_message_present"
     assert [item["account_name"] for item in group_breakdown[0]["top_historical_like_samples"]] == [
         "Current-OpenAI-Exact",
     ]
     assert group_breakdown[1]["historical_like_accounts"] == 0
     assert group_breakdown[1]["historical_like_rate"] == 0.0
+    assert group_breakdown[1]["top_signal_pattern_key"] in {"remaining_empty", "short_ge_90"}
     assert group_breakdown[1]["top_historical_like_samples"] == []
 
     app.dependency_overrides.clear()

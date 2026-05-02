@@ -167,6 +167,7 @@ class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
     multi_round_signal_accounts: int
     historical_like_accounts: int
     historical_like_rate: float
+    top_signal_pattern_key: str | None = None
     top_signal_pattern: str | None = None
     top_historical_like_samples: list[ResearchCurrentSignalGroupSample] = Field(default_factory=list)
 
