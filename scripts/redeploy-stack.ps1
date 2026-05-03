@@ -1,6 +1,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$ProjectRoot,
+    [int]$CommandTimeoutSeconds,
     [switch]$SkipBuild
 )
 
@@ -10,35 +11,40 @@ if (-not $ProjectRoot) {
     $ProjectRoot = Split-Path -Parent $PSScriptRoot
 }
 
-function Invoke-ComposeCommand {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string[]]$Arguments
-    )
+$commonScriptPath = Join-Path $PSScriptRoot "common.ps1"
+. $commonScriptPath
 
-    & docker compose @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "docker compose $($Arguments -join ' ') 执行失败，退出码：$LASTEXITCODE"
-    }
-}
+$resolvedCommandTimeoutSeconds = Resolve-AuthTraceCommandTimeoutSeconds -ProjectRoot $ProjectRoot -PreferredTimeoutSeconds $CommandTimeoutSeconds
 
 Push-Location $ProjectRoot
 try {
     if ($PSCmdlet.ShouldProcess($ProjectRoot, "校验 compose 配置")) {
-        Invoke-ComposeCommand -Arguments @("config")
+        Invoke-DockerComposeCommand `
+            -ProjectRoot $ProjectRoot `
+            -Arguments @("config") `
+            -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
     }
 
     if (-not $SkipBuild) {
         if ($PSCmdlet.ShouldProcess($ProjectRoot, "构建并重启 AuthTrace 服务")) {
-            Invoke-ComposeCommand -Arguments @("up", "-d", "--build", "--remove-orphans")
+            Invoke-DockerComposeCommand `
+                -ProjectRoot $ProjectRoot `
+                -Arguments @("up", "-d", "--build", "--remove-orphans") `
+                -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
         }
     }
     elseif ($PSCmdlet.ShouldProcess($ProjectRoot, "重启 AuthTrace 服务")) {
-        Invoke-ComposeCommand -Arguments @("up", "-d", "--remove-orphans")
+        Invoke-DockerComposeCommand `
+            -ProjectRoot $ProjectRoot `
+            -Arguments @("up", "-d", "--remove-orphans") `
+            -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
     }
 
     if ($PSCmdlet.ShouldProcess($ProjectRoot, "查看 compose 服务状态")) {
-        Invoke-ComposeCommand -Arguments @("ps")
+        Invoke-DockerCommand `
+            -ProjectRoot $ProjectRoot `
+            -Arguments @("ps", "-a", "--filter", "name=authtrace-", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}") `
+            -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
     }
 }
 finally {

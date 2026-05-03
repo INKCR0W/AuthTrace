@@ -2,6 +2,7 @@
 param(
     [string]$ProjectRoot,
     [string]$OutputDirectory,
+    [int]$CommandTimeoutSeconds,
     [switch]$Force
 )
 
@@ -11,18 +12,17 @@ if (-not $ProjectRoot) {
     $ProjectRoot = Split-Path -Parent $PSScriptRoot
 }
 
+$commonScriptPath = Join-Path $PSScriptRoot "common.ps1"
+. $commonScriptPath
+
 if (-not $OutputDirectory) {
-    $envFilePath = Join-Path $ProjectRoot ".env"
-    if (Test-Path $envFilePath) {
-        $backupLine = Select-String -Path $envFilePath -Pattern "^AUTHTRACE_BACKUP_DIR=(.+)$" | Select-Object -First 1
-        if ($backupLine) {
-            $configuredDirectory = $backupLine.Matches[0].Groups[1].Value.Trim().Trim('"')
-            $OutputDirectory = if ([System.IO.Path]::IsPathRooted($configuredDirectory)) {
-                $configuredDirectory
-            }
-            else {
-                Join-Path $ProjectRoot $configuredDirectory
-            }
+    $configuredDirectory = Get-AuthTraceEnvValue -ProjectRoot $ProjectRoot -Key "AUTHTRACE_BACKUP_DIR"
+    if ($configuredDirectory) {
+        $OutputDirectory = if ([System.IO.Path]::IsPathRooted($configuredDirectory)) {
+            $configuredDirectory
+        }
+        else {
+            Join-Path $ProjectRoot $configuredDirectory
         }
     }
 }
@@ -35,22 +35,19 @@ $resolvedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $backupFile = Join-Path $resolvedOutputDirectory "authtrace-postgres-$timestamp.sql"
 $containerBackupFile = "/tmp/authtrace-backup-$timestamp.sql"
+$postgresContainerName = "authtrace-postgres"
+$resolvedCommandTimeoutSeconds = Resolve-AuthTraceCommandTimeoutSeconds -ProjectRoot $ProjectRoot -PreferredTimeoutSeconds $CommandTimeoutSeconds
 
 Push-Location $ProjectRoot
 try {
-    $runningServices = & docker compose ps --services --status running
-    if ($LASTEXITCODE -ne 0) {
-        throw "无法确认 compose 服务状态"
+    if (-not (Test-AuthTraceContainerRunning -ProjectRoot $ProjectRoot -ContainerName $postgresContainerName -TimeoutSeconds $resolvedCommandTimeoutSeconds)) {
+        throw "postgres 容器未运行，请先执行 docker compose up -d postgres 或启动整套服务"
     }
 
-    if ($runningServices -notcontains "postgres") {
-        throw "postgres 服务未运行，请先执行 docker compose up -d postgres 或启动整套服务"
-    }
-
-    & docker compose exec -T postgres sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-    if ($LASTEXITCODE -ne 0) {
-        throw "postgres 尚未 ready，请稍后重试"
-    }
+    Invoke-DockerCommand `
+        -ProjectRoot $ProjectRoot `
+        -Arguments @("exec", "-T", $postgresContainerName, "sh", "-lc", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"') `
+        -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
 
     if ($PSCmdlet.ShouldProcess($backupFile, "创建 PostgreSQL 备份")) {
         if (-not (Test-Path $resolvedOutputDirectory)) {
@@ -62,15 +59,15 @@ try {
         }
 
         try {
-            & docker compose exec -T postgres sh -lc "pg_dump --clean --if-exists --no-owner --no-privileges -U `"`$POSTGRES_USER`" `"`$POSTGRES_DB`" -f '$containerBackupFile'"
-            if ($LASTEXITCODE -ne 0) {
-                throw "数据库备份失败"
-            }
+            Invoke-DockerCommand `
+                -ProjectRoot $ProjectRoot `
+                -Arguments @("exec", "-T", $postgresContainerName, "sh", "-lc", "pg_dump --clean --if-exists --no-owner --no-privileges -U `"`$POSTGRES_USER`" `"`$POSTGRES_DB`" -f '$containerBackupFile'") `
+                -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
 
-            & docker compose cp "postgres:$containerBackupFile" $backupFile
-            if ($LASTEXITCODE -ne 0) {
-                throw "备份文件复制到宿主机失败"
-            }
+            Invoke-DockerCommand `
+                -ProjectRoot $ProjectRoot `
+                -Arguments @("cp", "$postgresContainerName`:$containerBackupFile", $backupFile) `
+                -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
         }
         catch {
             if (Test-Path $backupFile) {
@@ -79,7 +76,11 @@ try {
             throw
         }
         finally {
-            & docker compose exec -T postgres sh -lc "rm -f '$containerBackupFile'" | Out-Null
+            Invoke-DockerCommand `
+                -ProjectRoot $ProjectRoot `
+                -Arguments @("exec", "-T", $postgresContainerName, "sh", "-lc", "rm -f '$containerBackupFile'") `
+                -TimeoutSeconds $resolvedCommandTimeoutSeconds `
+                -AllowNonZeroExit | Out-Null
         }
 
         Write-Host "备份完成：$backupFile"

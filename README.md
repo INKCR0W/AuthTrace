@@ -58,6 +58,7 @@ docker compose up -d --build
 - `AUTHTRACE_DOCKER_LOG_MAX_SIZE`：单个容器日志文件滚动阈值
 - `AUTHTRACE_DOCKER_LOG_MAX_FILE`：容器日志保留份数
 - `AUTHTRACE_BACKUP_DIR`：数据库备份输出目录
+- `AUTHTRACE_DOCKER_COMMAND_TIMEOUT_SECONDS`：运维脚本里单条 Docker 命令的超时秒数，用于避免 Docker CLI 异常时长时间卡住
 
 ## 运维命令
 
@@ -79,6 +80,12 @@ docker compose logs --tail=200 frontend backend postgres
 powershell -ExecutionPolicy Bypass -File .\scripts\backup-postgres.ps1
 ```
 
+如果宿主机 Docker 偶发卡住，可以临时缩短单条命令超时：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\backup-postgres.ps1 -CommandTimeoutSeconds 60
+```
+
 从备份恢复数据库：
 
 ```powershell
@@ -90,6 +97,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\restore-postgres.ps1 -BackupF
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\redeploy-stack.ps1
 ```
+
+三个运维脚本都会优先读取根目录 `.env` 中的 `AUTHTRACE_DOCKER_COMMAND_TIMEOUT_SECONDS`，也支持通过 `-CommandTimeoutSeconds` 在单次执行时覆盖。
 
 ## 长期运行建议
 
