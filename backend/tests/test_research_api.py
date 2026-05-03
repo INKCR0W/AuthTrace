@@ -398,6 +398,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "signal_accounts": 0,
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
+        "signal_count_breakdown": [],
         "signal_streak_breakdown": [],
         "historical_match_breakdown": [],
         "historical_like_event_count_breakdown": [],
@@ -706,6 +707,7 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "signal_accounts": 0,
         "signal_breakdown": [],
         "signal_pattern_breakdown": [],
+        "signal_count_breakdown": [],
         "signal_streak_breakdown": [],
         "historical_match_breakdown": [],
         "historical_like_event_count_breakdown": [],
@@ -1106,6 +1108,13 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "count": 1,
         }
     ]
+    assert baseline["signal_count_breakdown"] == [
+        {
+            "key": "3_plus",
+            "label": "3 个及以上信号",
+            "count": 1,
+        }
+    ]
     assert baseline["signal_streak_breakdown"] == [
         {
             "key": "1",
@@ -1183,6 +1192,169 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "historical_match_gap_label": None,
             "historical_match_gap_minutes": None,
             "historical_like_event_count": 0,
+        }
+    ]
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_filters_current_signal_count_bucket() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        db.add_all(
+            [
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-one",
+                    name="One-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_weekly_used_percent=Decimal("95.00"),
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=2),
+                    last_seen_at=base_time,
+                ),
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-two",
+                    name="Two-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_weekly_used_percent=Decimal("96.00"),
+                    current_limit_reached=True,
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=2),
+                    last_seen_at=base_time,
+                ),
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-three",
+                    name="Three-Signal",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_weekly_used_percent=Decimal("97.00"),
+                    current_limit_reached=True,
+                    current_allowed=False,
+                    status_message="still hot",
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=2),
+                    last_seen_at=base_time,
+                ),
+                Account(
+                    source_id=source.id,
+                    auth_index="auth-normal",
+                    name="Normal-Account",
+                    provider="openai",
+                    account_type="chatgpt",
+                    disabled=False,
+                    current_is_401=False,
+                    current_status_code=200,
+                    current_last_checked_at=base_time,
+                    first_seen_at=base_time - timedelta(days=2),
+                    last_seen_at=base_time,
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    baseline = response.json()["current_signal_baseline"]
+    assert baseline["observed_accounts"] == 4
+    assert baseline["signal_accounts"] == 3
+    assert baseline["signal_count_breakdown"] == [
+        {
+            "key": "1",
+            "label": "仅 1 个信号",
+            "count": 1,
+        },
+        {
+            "key": "2",
+            "label": "2 个信号",
+            "count": 1,
+        },
+        {
+            "key": "3_plus",
+            "label": "3 个及以上信号",
+            "count": 1,
+        },
+    ]
+    assert [item["account_name"] for item in baseline["recent_samples"]] == [
+        "Three-Signal",
+        "Two-Signal",
+        "One-Signal",
+    ]
+
+    filtered_response = asyncio.run(
+        _request("GET", "/api/v1/research/overview?window_days=7&current_signal_count_bucket=2")
+    )
+
+    assert filtered_response.status_code == 200
+    filtered_baseline = filtered_response.json()["current_signal_baseline"]
+    assert filtered_baseline["observed_accounts"] == 4
+    assert filtered_baseline["signal_accounts"] == 1
+    assert filtered_baseline["signal_count_breakdown"] == [
+        {
+            "key": "2",
+            "label": "2 个信号",
+            "count": 1,
+        }
+    ]
+    assert [item["account_name"] for item in filtered_baseline["recent_samples"]] == ["Two-Signal"]
+    assert filtered_baseline["current_signal_group_breakdown"] == [
+        {
+            "label": "openai / chatgpt",
+            "provider": "openai",
+            "account_type": "chatgpt",
+            "observed_accounts": 4,
+            "signal_accounts": 1,
+            "signal_rate": 25.0,
+            "multi_round_signal_accounts": 0,
+            "historical_like_accounts": 0,
+            "historical_like_rate": 0.0,
+            "top_historical_gap_bucket": None,
+            "top_historical_gap_label": None,
+            "top_historical_gap_count": 0,
+            "top_signal_pattern_key": "weekly_ge_90|limit_reached",
+            "top_signal_pattern": "周额度 >= 90% / limit_reached=true",
+            "top_historical_like_samples": [],
         }
     ]
 
@@ -4156,6 +4328,35 @@ def test_research_overview_api_rejects_unknown_current_signal_key() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Unsupported current_signal_key: unknown_signal"
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_rejects_unknown_current_signal_count_bucket() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    response = asyncio.run(
+        _request("GET", "/api/v1/research/overview?window_days=7&current_signal_count_bucket=4")
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported current_signal_count_bucket: 4"
 
     app.dependency_overrides.clear()
 

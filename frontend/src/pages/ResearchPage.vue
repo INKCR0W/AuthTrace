@@ -37,6 +37,11 @@ const CURRENT_STREAK_OPTIONS = [
   { value: "3", label: "连续至少 3 轮" },
   { value: "4", label: "连续至少 4 轮" },
 ] as const;
+const CURRENT_SIGNAL_COUNT_BUCKET_OPTIONS = [
+  { key: "1", label: "仅 1 个信号" },
+  { key: "2", label: "2 个信号" },
+  { key: "3_plus", label: "3 个及以上信号" },
+] as const;
 const CURRENT_HISTORICAL_LIKE_BUCKET_OPTIONS = [
   { key: "1", label: "1 条历史高贴近事件" },
   { key: "2_3", label: "2-3 条历史高贴近事件" },
@@ -56,6 +61,9 @@ const currentSignalLabelMap = Object.fromEntries(
 const currentMatchLabelMap = Object.fromEntries(
   CURRENT_MATCH_OPTIONS.map((item) => [item.key, item.label]),
 ) as Record<string, string>;
+const currentSignalCountBucketLabelMap = Object.fromEntries(
+  CURRENT_SIGNAL_COUNT_BUCKET_OPTIONS.map((item) => [item.key, item.label]),
+) as Record<string, string>;
 const currentHistoricalLikeBucketLabelMap = Object.fromEntries(
   CURRENT_HISTORICAL_LIKE_BUCKET_OPTIONS.map((item) => [item.key, item.label]),
 ) as Record<string, string>;
@@ -65,6 +73,9 @@ const pre401GapLabelMap = Object.fromEntries(
 const allowedCurrentSignalKeys = new Set(CURRENT_SIGNAL_OPTIONS.map((item) => item.key));
 const allowedCurrentMatchKeys = new Set(CURRENT_MATCH_OPTIONS.map((item) => item.key));
 const allowedCurrentSignalMinStreaks = new Set(CURRENT_STREAK_OPTIONS.map((item) => item.value));
+const allowedCurrentSignalCountBucketKeys = new Set(
+  CURRENT_SIGNAL_COUNT_BUCKET_OPTIONS.map((item) => item.key),
+);
 const allowedCurrentHistoricalLikeBucketKeys = new Set(
   CURRENT_HISTORICAL_LIKE_BUCKET_OPTIONS.map((item) => item.key),
 );
@@ -84,6 +95,7 @@ const filters = reactive({
   currentSignalKey: "",
   currentStatusMessage: "",
   currentSignalPatternKey: "",
+  currentSignalCountBucket: "",
   pre401SignalKey: "",
   pre401StatusMessage: "",
   pre401SignalPatternKey: "",
@@ -102,6 +114,7 @@ interface ResearchRouteState {
   currentSignalKey: string;
   currentStatusMessage: string;
   currentSignalPatternKey: string;
+  currentSignalCountBucket: string;
   pre401SignalKey: string;
   pre401StatusMessage: string;
   pre401SignalPatternKey: string;
@@ -132,6 +145,7 @@ const researchRouteQueryKeys = [
   "current_signal_key",
   "current_status_message",
   "current_signal_pattern_key",
+  "current_signal_count_bucket",
   "pre_401_signal_key",
   "pre_401_status_message",
   "pre_401_signal_pattern_key",
@@ -168,6 +182,7 @@ const normalizedAccountType = computed(() => filters.accountType.trim());
 const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim());
 const normalizedCurrentStatusMessage = computed(() => filters.currentStatusMessage.trim());
 const normalizedCurrentSignalPatternKey = computed(() => filters.currentSignalPatternKey.trim());
+const normalizedCurrentSignalCountBucket = computed(() => filters.currentSignalCountBucket.trim());
 const normalizedPre401SignalKey = computed(() => filters.pre401SignalKey.trim());
 const normalizedPre401StatusMessage = computed(() => filters.pre401StatusMessage.trim());
 const normalizedPre401SignalPatternKey = computed(() => filters.pre401SignalPatternKey.trim());
@@ -188,6 +203,15 @@ const selectedPre401SignalLabel = computed(() => {
     return "";
   }
   return currentSignalLabelMap[normalizedPre401SignalKey.value] ?? normalizedPre401SignalKey.value;
+});
+const selectedCurrentSignalCountBucketLabel = computed(() => {
+  if (!normalizedCurrentSignalCountBucket.value) {
+    return "";
+  }
+  return (
+    currentSignalCountBucketLabelMap[normalizedCurrentSignalCountBucket.value] ??
+    normalizedCurrentSignalCountBucket.value
+  );
 });
 function formatPatternLabel(patternKey: string) {
   return patternKey
@@ -378,6 +402,7 @@ const hasScopedFilters = computed(
         normalizedCurrentSignalKey.value ||
         normalizedCurrentStatusMessage.value ||
         normalizedCurrentSignalPatternKey.value ||
+        normalizedCurrentSignalCountBucket.value ||
         normalizedPre401SignalKey.value ||
         normalizedPre401StatusMessage.value ||
         normalizedPre401SignalPatternKey.value ||
@@ -406,6 +431,9 @@ const scopeSummary = computed(() => {
   }
   if (selectedCurrentSignalPatternLabel.value) {
     segments.push(`当前模式=${selectedCurrentSignalPatternLabel.value}`);
+  }
+  if (selectedCurrentSignalCountBucketLabel.value) {
+    segments.push(`并发信号数=${selectedCurrentSignalCountBucketLabel.value}`);
   }
   if (selectedPre401SignalLabel.value) {
     segments.push(`前序信号=${selectedPre401SignalLabel.value}`);
@@ -441,6 +469,7 @@ const currentSignalScopeHint = computed(() => {
   if (!selectedCurrentSignalLabel.value && !selectedCurrentStatusMessageLabel.value) {
     if (
       !selectedCurrentSignalPatternLabel.value &&
+      !selectedCurrentSignalCountBucketLabel.value &&
       !selectedCurrentMatchLabel.value &&
       !selectedCurrentSignalMinStreakLabel.value &&
       !selectedCurrentHistoricalLikeBucketLabel.value &&
@@ -459,6 +488,9 @@ const currentSignalScopeHint = computed(() => {
   }
   if (selectedCurrentSignalPatternLabel.value) {
     segments.push(`当前模式“${selectedCurrentSignalPatternLabel.value}”`);
+  }
+  if (selectedCurrentSignalCountBucketLabel.value) {
+    segments.push(`并发信号数“${selectedCurrentSignalCountBucketLabel.value}”`);
   }
   if (selectedCurrentMatchLabel.value) {
     segments.push(`历史贴近度“${selectedCurrentMatchLabel.value}”`);
@@ -704,6 +736,9 @@ function syncFilters(next: Partial<typeof filters>) {
   if (next.currentSignalPatternKey !== undefined) {
     filters.currentSignalPatternKey = next.currentSignalPatternKey;
   }
+  if (next.currentSignalCountBucket !== undefined) {
+    filters.currentSignalCountBucket = next.currentSignalCountBucket;
+  }
   if (next.pre401SignalKey !== undefined) {
     filters.pre401SignalKey = next.pre401SignalKey;
   }
@@ -752,6 +787,13 @@ function applyCurrentSignalPatternFilter(patternKey: string) {
   syncFilters({
     currentSignalKey: "",
     currentSignalPatternKey: patternKey,
+  });
+  void loadOverview();
+}
+
+function applyCurrentSignalCountBucketFilter(bucketKey: string) {
+  syncFilters({
+    currentSignalCountBucket: bucketKey,
   });
   void loadOverview();
 }
@@ -832,6 +874,10 @@ function isCurrentStatusMessageFilterActive(statusMessage: string) {
 
 function isCurrentSignalPatternFilterActive(patternKey: string) {
   return normalizedCurrentSignalPatternKey.value === patternKey;
+}
+
+function isCurrentSignalCountBucketFilterActive(bucketKey: string) {
+  return normalizedCurrentSignalCountBucket.value === bucketKey;
 }
 
 function isPre401SignalFilterActive(signalKey: string) {
@@ -932,6 +978,10 @@ function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
     ),
     currentStatusMessage: normalizeQueryValue(query.current_status_message),
     currentSignalPatternKey: normalizePatternKeyValue(normalizeQueryValue(query.current_signal_pattern_key)),
+    currentSignalCountBucket: normalizeAllowedValue(
+      normalizeQueryValue(query.current_signal_count_bucket),
+      allowedCurrentSignalCountBucketKeys,
+    ),
     pre401SignalKey: normalizeAllowedValue(
       normalizeQueryValue(query.pre_401_signal_key),
       allowedCurrentSignalKeys,
@@ -967,6 +1017,7 @@ function readCurrentRouteState(): ResearchRouteState {
     currentSignalKey: normalizedCurrentSignalKey.value,
     currentStatusMessage: normalizedCurrentStatusMessage.value,
     currentSignalPatternKey: normalizePatternKeyValue(normalizedCurrentSignalPatternKey.value),
+    currentSignalCountBucket: normalizedCurrentSignalCountBucket.value,
     pre401SignalKey: normalizedPre401SignalKey.value,
     pre401StatusMessage: normalizedPre401StatusMessage.value,
     pre401SignalPatternKey: normalizePatternKeyValue(normalizedPre401SignalPatternKey.value),
@@ -987,6 +1038,7 @@ function applyRouteState(state: ResearchRouteState) {
     currentSignalKey: state.currentSignalKey,
     currentStatusMessage: state.currentStatusMessage,
     currentSignalPatternKey: state.currentSignalPatternKey,
+    currentSignalCountBucket: state.currentSignalCountBucket,
     pre401SignalKey: state.pre401SignalKey,
     pre401StatusMessage: state.pre401StatusMessage,
     pre401SignalPatternKey: state.pre401SignalPatternKey,
@@ -1007,6 +1059,7 @@ function areRouteStatesEqual(left: ResearchRouteState, right: ResearchRouteState
     left.currentSignalKey === right.currentSignalKey &&
     left.currentStatusMessage === right.currentStatusMessage &&
     left.currentSignalPatternKey === right.currentSignalPatternKey &&
+    left.currentSignalCountBucket === right.currentSignalCountBucket &&
     left.pre401SignalKey === right.pre401SignalKey &&
     left.pre401StatusMessage === right.pre401StatusMessage &&
     left.pre401SignalPatternKey === right.pre401SignalPatternKey &&
@@ -1039,6 +1092,9 @@ function buildRouteQuery(state: ResearchRouteState): LocationQueryRaw {
   }
   if (state.currentSignalPatternKey) {
     query.current_signal_pattern_key = state.currentSignalPatternKey;
+  }
+  if (state.currentSignalCountBucket) {
+    query.current_signal_count_bucket = state.currentSignalCountBucket;
   }
   if (state.pre401SignalKey) {
     query.pre_401_signal_key = state.pre401SignalKey;
@@ -1109,6 +1165,7 @@ async function loadOverview(options?: { syncRoute?: boolean }) {
       current_signal_key: normalizedCurrentSignalKey.value || undefined,
       current_status_message: normalizedCurrentStatusMessage.value || undefined,
       current_signal_pattern_key: normalizedCurrentSignalPatternKey.value || undefined,
+      current_signal_count_bucket: normalizedCurrentSignalCountBucket.value || undefined,
       pre_401_signal_key: normalizedPre401SignalKey.value || undefined,
       pre_401_status_message: normalizedPre401StatusMessage.value || undefined,
       pre_401_signal_pattern_key: normalizedPre401SignalPatternKey.value || undefined,
@@ -1136,6 +1193,7 @@ function resetFilters() {
   filters.currentSignalKey = "";
   filters.currentStatusMessage = "";
   filters.currentSignalPatternKey = "";
+  filters.currentSignalCountBucket = "";
   filters.pre401SignalKey = "";
   filters.pre401StatusMessage = "";
   filters.pre401SignalPatternKey = "";
@@ -1369,6 +1427,15 @@ watch(
           </select>
         </label>
         <label>
+          <span class="subtle-label">并发信号数</span>
+          <select v-model="filters.currentSignalCountBucket" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部</option>
+            <option v-for="item in CURRENT_SIGNAL_COUNT_BUCKET_OPTIONS" :key="`current-count-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">前序信号</span>
           <select v-model="filters.pre401SignalKey" class="input-field compact-select" @change="loadOverview">
             <option value="">全部信号</option>
@@ -1484,8 +1551,16 @@ watch(
 
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
     <p class="subtle-line">当前筛选会写入页面 URL，刷新或复制链接后可直接恢复这组研究视角。</p>
-    <p v-if="selectedCurrentSignalLabel || selectedCurrentStatusMessageLabel || selectedCurrentSignalPatternLabel" class="subtle-line">
-      “当前信号 / 当前消息 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
+    <p
+      v-if="
+        selectedCurrentSignalLabel ||
+        selectedCurrentStatusMessageLabel ||
+        selectedCurrentSignalPatternLabel ||
+        selectedCurrentSignalCountBucketLabel
+      "
+      class="subtle-line"
+    >
+      “当前信号 / 当前消息 / 当前模式 / 并发信号数”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
     </p>
     <p
       v-if="
@@ -1510,6 +1585,7 @@ watch(
         selectedCurrentSignalLabel ||
         selectedCurrentStatusMessageLabel ||
         selectedCurrentSignalPatternLabel ||
+        selectedCurrentSignalCountBucketLabel ||
         selectedPre401SignalLabel ||
         selectedPre401StatusMessageLabel ||
         selectedPre401SignalPatternLabel ||
@@ -1517,7 +1593,7 @@ watch(
       "
       class="subtle-line"
     >
-      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前消息 / 当前模式 / 前序信号 / 前序消息 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
+      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前消息 / 当前模式 / 并发信号数 / 前序信号 / 前序消息 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
@@ -1728,6 +1804,25 @@ watch(
             >
               {{ item.label }} · {{ formatCount(item.count) }} 个账号
             </p>
+          </div>
+
+          <div v-if="overview.current_signal_baseline.signal_count_breakdown.length" class="observation-list">
+            <p class="subtle-label">并发信号数</p>
+            <div
+              v-for="item in overview.current_signal_baseline.signal_count_breakdown"
+              :key="`signal-count-${item.key}`"
+              class="observation-item observation-item-action"
+            >
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 个账号</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentSignalCountBucketFilterActive(item.key)"
+                @click="applyCurrentSignalCountBucketFilter(item.key)"
+              >
+                {{ isCurrentSignalCountBucketFilterActive(item.key) ? "已筛到并发信号数" : "筛到并发信号数" }}
+              </button>
+            </div>
           </div>
 
           <div v-if="overview.current_signal_baseline.historical_match_breakdown.length" class="observation-list">

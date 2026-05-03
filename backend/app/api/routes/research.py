@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
 from app.repositories.research import (
+    RESEARCH_CURRENT_SIGNAL_COUNT_BUCKET_KEYS,
     RESEARCH_HISTORICAL_MATCH_LEVELS,
     RESEARCH_HISTORICAL_LIKE_EVENT_COUNT_BUCKET_KEYS,
     RESEARCH_PRE_401_GAP_BUCKET_KEYS,
@@ -41,6 +42,7 @@ def get_research_overview_api(
     current_signal_key: str | None = Query(default=None),
     current_status_message: str | None = Query(default=None),
     current_signal_pattern_key: str | None = Query(default=None),
+    current_signal_count_bucket: str | None = Query(default=None),
     pre_401_signal_key: str | None = Query(default=None),
     pre_401_status_message: str | None = Query(default=None),
     pre_401_signal_pattern_key: str | None = Query(default=None),
@@ -60,6 +62,14 @@ def get_research_overview_api(
         raise HTTPException(
             status_code=422,
             detail=f"Unsupported pre_401_signal_key: {pre_401_signal_key}",
+        )
+    if (
+        current_signal_count_bucket is not None
+        and current_signal_count_bucket not in RESEARCH_CURRENT_SIGNAL_COUNT_BUCKET_KEYS
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported current_signal_count_bucket: {current_signal_count_bucket}",
         )
     if current_signal_pattern_key is not None:
         try:
@@ -113,6 +123,7 @@ def get_research_overview_api(
         current_signal_key=current_signal_key,
         current_status_message=current_status_message,
         current_signal_pattern_key=current_signal_pattern_key,
+        current_signal_count_bucket=current_signal_count_bucket,
         pre_401_signal_key=pre_401_signal_key,
         pre_401_status_message=pre_401_status_message,
         pre_401_signal_pattern_key=pre_401_signal_pattern_key,
@@ -184,6 +195,10 @@ def get_research_overview_api(
             signal_pattern_breakdown=[
                 ResearchBucketCount.model_validate(item)
                 for item in overview.current_signal_baseline.signal_pattern_breakdown
+            ],
+            signal_count_breakdown=[
+                ResearchBucketCount.model_validate(item)
+                for item in overview.current_signal_baseline.signal_count_breakdown
             ],
             signal_streak_breakdown=[
                 ResearchBucketCount.model_validate(item)

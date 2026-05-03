@@ -205,6 +205,7 @@ class ResearchCurrentSignalBaseline:
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount]
     signal_pattern_breakdown: list[ResearchBucketCount]
+    signal_count_breakdown: list[ResearchBucketCount]
     signal_streak_breakdown: list[ResearchBucketCount]
     historical_match_breakdown: list[ResearchBucketCount]
     historical_like_event_count_breakdown: list[ResearchBucketCount]
@@ -235,6 +236,7 @@ class ResearchOverviewFilters:
     current_signal_key: str | None = None
     current_status_message: str | None = None
     current_signal_pattern_key: str | None = None
+    current_signal_count_bucket: str | None = None
     pre_401_signal_key: str | None = None
     pre_401_status_message: str | None = None
     pre_401_signal_pattern_key: str | None = None
@@ -255,6 +257,7 @@ def get_research_overview(
     current_signal_key: str | None = None,
     current_status_message: str | None = None,
     current_signal_pattern_key: str | None = None,
+    current_signal_count_bucket: str | None = None,
     pre_401_signal_key: str | None = None,
     pre_401_status_message: str | None = None,
     pre_401_signal_pattern_key: str | None = None,
@@ -273,6 +276,7 @@ def get_research_overview(
         current_signal_key=current_signal_key,
         current_status_message=_normalize_status_message_filter(current_status_message),
         current_signal_pattern_key=current_signal_pattern_key,
+        current_signal_count_bucket=current_signal_count_bucket,
         pre_401_signal_key=pre_401_signal_key,
         pre_401_status_message=_normalize_status_message_filter(pre_401_status_message),
         pre_401_signal_pattern_key=pre_401_signal_pattern_key,
@@ -759,6 +763,7 @@ def _build_current_signal_baseline(
     )
     signal_counter = Counter[str]()
     pattern_counter = Counter[str]()
+    signal_count_counter = Counter[str]()
     streak_counter = Counter[str]()
     historical_match_counter = Counter[str]()
     historical_like_event_count_counter = Counter[str]()
@@ -786,6 +791,11 @@ def _build_current_signal_baseline(
         if not signal_keys:
             continue
         if filters.current_signal_key and filters.current_signal_key not in signal_keys:
+            continue
+        if (
+            filters.current_signal_count_bucket is not None
+            and _bucket_signal_count(len(signal_keys)) != filters.current_signal_count_bucket
+        ):
             continue
 
         pattern_key = "|".join(signal_keys)
@@ -840,6 +850,7 @@ def _build_current_signal_baseline(
             continue
         signal_counter.update(signal_keys)
         pattern_counter[pattern_key] += 1
+        signal_count_counter[_bucket_signal_count(len(signal_keys))] += 1
         signal_group_counter[group_key] += 1
         group_pattern_counter.setdefault(group_key, Counter())[pattern_key] += 1
         streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
@@ -969,6 +980,7 @@ def _build_current_signal_baseline(
         signal_accounts=len(samples),
         signal_breakdown=_build_signal_breakdown(signal_counter),
         signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
+        signal_count_breakdown=_build_signal_count_breakdown(signal_count_counter),
         signal_streak_breakdown=_build_signal_streak_breakdown(streak_counter),
         historical_match_breakdown=_build_historical_match_breakdown(historical_match_counter),
         historical_like_event_count_breakdown=_build_historical_like_event_count_breakdown(
@@ -1102,6 +1114,17 @@ def _build_signal_streak_breakdown(counter: Counter[str]) -> list[ResearchBucket
         ("4_plus", "连续 4 轮以上", counter.get("4_plus", 0)),
     ]
     return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in buckets if count > 0]
+
+
+def _build_signal_count_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
+    return [
+        ResearchBucketCount(key=key, label=label, count=count)
+        for key, label, count in (
+            (key, label, counter.get(key, 0))
+            for key, label in _CURRENT_SIGNAL_COUNT_BUCKETS
+        )
+        if count > 0
+    ]
 
 
 def _build_historical_match_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
@@ -1364,6 +1387,14 @@ _HISTORICAL_LIKE_EVENT_COUNT_BUCKETS = (
     ("1", "1 条历史高贴近事件"),
     ("2_3", "2-3 条历史高贴近事件"),
     ("4_plus", "4 条及以上历史高贴近事件"),
+)
+_CURRENT_SIGNAL_COUNT_BUCKETS = (
+    ("1", "仅 1 个信号"),
+    ("2", "2 个信号"),
+    ("3_plus", "3 个及以上信号"),
+)
+RESEARCH_CURRENT_SIGNAL_COUNT_BUCKET_KEYS = tuple(
+    key for key, _ in _CURRENT_SIGNAL_COUNT_BUCKETS
 )
 RESEARCH_HISTORICAL_LIKE_EVENT_COUNT_BUCKET_KEYS = tuple(
     key for key, _ in _HISTORICAL_LIKE_EVENT_COUNT_BUCKETS
@@ -1727,6 +1758,14 @@ def _bucket_signal_streak(value: int) -> str:
     if value <= 3:
         return "2_3"
     return "4_plus"
+
+
+def _bucket_signal_count(value: int) -> str:
+    if value <= 1:
+        return "1"
+    if value == 2:
+        return "2"
+    return "3_plus"
 
 
 def _bucket_historical_like_event_count(value: int) -> str | None:

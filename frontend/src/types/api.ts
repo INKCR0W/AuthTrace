@@ -209,6 +209,7 @@ export interface ResearchCurrentSignalBaseline {
   signal_accounts: number;
   signal_breakdown: ResearchBucketCount[];
   signal_pattern_breakdown: ResearchBucketCount[];
+  signal_count_breakdown: ResearchBucketCount[];
   signal_streak_breakdown: ResearchBucketCount[];
   historical_match_breakdown: ResearchBucketCount[];
   historical_like_event_count_breakdown: ResearchBucketCount[];

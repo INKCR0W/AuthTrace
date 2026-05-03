@@ -206,6 +206,7 @@ class ResearchCurrentSignalBaseline(BaseModel):
     signal_accounts: int
     signal_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    signal_count_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_match_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_like_event_count_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
