@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_app_settings, get_db_session, get_management_client
-from app.clients.management import ManagementApiClient
+from app.clients.management import ManagementApiClient, ManagementApiError
 from app.core.config import Settings
 from app.schemas.sync import AuthFileSyncRequest, AuthFileSyncResponse
 from app.services.auth_file_sync import ScanJobAlreadyRunningError, run_auth_file_sync
@@ -42,5 +42,13 @@ async def sync_auth_files(
                 "running_scan_job_id": exc.scan_job_id,
                 "source_id": exc.source_id,
                 "scan_started_at": _serialize_datetime(exc.scan_started_at),
+            },
+        ) from exc
+    except ManagementApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "message": "管理端请求失败，请确认 AUTHTRACE_MANAGEMENT_BASE_URL 在后端容器内可访问",
+                "error": str(exc),
             },
         ) from exc

@@ -38,6 +38,7 @@ uv run uvicorn app.main:app --reload
 - `AUTHTRACE_SCHEDULER_INTERVAL_MINUTES` 用于控制扫描间隔，默认 `15`
 - `AUTHTRACE_SCHEDULER_JITTER_SECONDS` 用于给自动扫描触发时间增加 `0` 到配置值之间的随机延迟，默认 `0`
 - 若未配置完整管理端地址或 token，自动扫描不会启动，扫描任务页会显示阻塞原因
+- 容器部署时，`AUTHTRACE_MANAGEMENT_BASE_URL` 必须是后端容器内可访问的地址；管理端在宿主机上时请使用 `http://host.docker.internal:端口`，不要使用 `127.0.0.1`
 
 usage 探测节流配置：
 

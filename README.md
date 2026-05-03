@@ -68,6 +68,14 @@ docker compose up -d --build
 - `AUTHTRACE_BACKUP_DIR`：数据库备份输出目录
 - `AUTHTRACE_DOCKER_COMMAND_TIMEOUT_SECONDS`：运维脚本里单条 Docker 命令的超时秒数，用于避免 Docker CLI 异常时长时间卡住
 
+如果管理端运行在 Docker 宿主机上，不要把 `AUTHTRACE_MANAGEMENT_BASE_URL` 配成 `http://127.0.0.1:端口`，因为在后端容器内 `127.0.0.1` 指向容器自身。请改用：
+
+```env
+AUTHTRACE_MANAGEMENT_BASE_URL=http://host.docker.internal:端口
+```
+
+如果管理端运行在另一台机器或公网域名上，则填写后端容器可以直接访问的真实地址。
+
 ## 运维命令
 
 查看服务状态：
