@@ -135,6 +135,7 @@ class ResearchCurrentSignalSample(BaseModel):
     historical_match_gap_bucket: str | None = None
     historical_match_gap_label: str | None = None
     historical_match_gap_minutes: int | None = None
+    historical_like_event_count: int
 
 
 class ResearchCurrentSignalGroupSample(BaseModel):
@@ -159,6 +160,7 @@ class ResearchCurrentSignalGroupSample(BaseModel):
     historical_match_gap_bucket: str | None = None
     historical_match_gap_label: str | None = None
     historical_match_gap_minutes: int | None = None
+    historical_like_event_count: int
 
 
 class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
@@ -206,6 +208,7 @@ class ResearchCurrentSignalBaseline(BaseModel):
     signal_pattern_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_match_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    historical_like_event_count_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_match_gap_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_replay_breakdown: list[ResearchHistoricalReplayBreakdownItem] = Field(default_factory=list)
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem] = Field(default_factory=list)

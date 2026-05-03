@@ -136,6 +136,7 @@ class ResearchCurrentSignalSample:
     historical_match_gap_bucket: str | None
     historical_match_gap_label: str | None
     historical_match_gap_minutes: int | None
+    historical_like_event_count: int
 
 
 @dataclass(slots=True)
@@ -159,6 +160,7 @@ class ResearchCurrentSignalGroupSample:
     historical_match_gap_bucket: str | None
     historical_match_gap_label: str | None
     historical_match_gap_minutes: int | None
+    historical_like_event_count: int
 
 
 @dataclass(slots=True)
@@ -205,6 +207,7 @@ class ResearchCurrentSignalBaseline:
     signal_pattern_breakdown: list[ResearchBucketCount]
     signal_streak_breakdown: list[ResearchBucketCount]
     historical_match_breakdown: list[ResearchBucketCount]
+    historical_like_event_count_breakdown: list[ResearchBucketCount]
     historical_match_gap_breakdown: list[ResearchBucketCount]
     historical_replay_breakdown: list[ResearchHistoricalReplayBreakdownItem]
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem]
@@ -236,6 +239,7 @@ class ResearchOverviewFilters:
     pre_401_gap_bucket: str | None = None
     current_match_level: str | None = None
     current_signal_min_streak: int | None = None
+    current_historical_like_bucket: str | None = None
     current_historical_gap_bucket: str | None = None
     current_historical_event_id: int | None = None
 
@@ -253,6 +257,7 @@ def get_research_overview(
     pre_401_gap_bucket: str | None = None,
     current_match_level: str | None = None,
     current_signal_min_streak: int | None = None,
+    current_historical_like_bucket: str | None = None,
     current_historical_gap_bucket: str | None = None,
     current_historical_event_id: int | None = None,
 ) -> ResearchOverview:
@@ -268,6 +273,7 @@ def get_research_overview(
         pre_401_gap_bucket=pre_401_gap_bucket,
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
+        current_historical_like_bucket=current_historical_like_bucket,
         current_historical_gap_bucket=current_historical_gap_bucket,
         current_historical_event_id=current_historical_event_id,
     )
@@ -742,6 +748,7 @@ def _build_current_signal_baseline(
     pattern_counter = Counter[str]()
     streak_counter = Counter[str]()
     historical_match_counter = Counter[str]()
+    historical_like_event_count_counter = Counter[str]()
     historical_match_gap_counter = Counter[str]()
     historical_replay_counter = Counter[int]()
     exact_replay_counter = Counter[int]()
@@ -797,6 +804,12 @@ def _build_current_signal_baseline(
         ):
             continue
         if (
+            filters.current_historical_like_bucket is not None
+            and _bucket_historical_like_event_count(historical_match.like_event_count)
+            != filters.current_historical_like_bucket
+        ):
+            continue
+        if (
             filters.current_historical_gap_bucket is not None
             and historical_match.best_gap_bucket != filters.current_historical_gap_bucket
         ):
@@ -812,6 +825,11 @@ def _build_current_signal_baseline(
         group_pattern_counter.setdefault(group_key, Counter())[pattern_key] += 1
         streak_counter[_bucket_signal_streak(consecutive_signal_snapshots)] += 1
         historical_match_counter[historical_match.level] += 1
+        historical_like_bucket = _bucket_historical_like_event_count(
+            historical_match.like_event_count
+        )
+        if historical_like_bucket is not None:
+            historical_like_event_count_counter[historical_like_bucket] += 1
         if historical_match.best_gap_bucket is not None:
             historical_match_gap_counter[historical_match.best_gap_bucket] += 1
         if (
@@ -885,6 +903,7 @@ def _build_current_signal_baseline(
             historical_match_gap_bucket=historical_match.best_gap_bucket,
             historical_match_gap_label=historical_match.best_gap_label,
             historical_match_gap_minutes=historical_match.best_gap_minutes,
+            historical_like_event_count=historical_match.like_event_count,
         )
         samples.append(current_sample)
         if historical_match.level in _HISTORICAL_LIKE_LEVELS:
@@ -909,6 +928,7 @@ def _build_current_signal_baseline(
                     historical_match_gap_bucket=current_sample.historical_match_gap_bucket,
                     historical_match_gap_label=current_sample.historical_match_gap_label,
                     historical_match_gap_minutes=current_sample.historical_match_gap_minutes,
+                    historical_like_event_count=current_sample.historical_like_event_count,
                 )
             )
 
@@ -932,6 +952,9 @@ def _build_current_signal_baseline(
         signal_pattern_breakdown=_build_signal_pattern_breakdown(pattern_counter),
         signal_streak_breakdown=_build_signal_streak_breakdown(streak_counter),
         historical_match_breakdown=_build_historical_match_breakdown(historical_match_counter),
+        historical_like_event_count_breakdown=_build_historical_like_event_count_breakdown(
+            historical_like_event_count_counter
+        ),
         historical_match_gap_breakdown=_build_historical_match_gap_breakdown(historical_match_gap_counter),
         historical_replay_breakdown=_build_historical_replay_breakdown(
             replay_counter=historical_replay_counter,
@@ -1071,6 +1094,19 @@ def _build_historical_match_breakdown(counter: Counter[str]) -> list[ResearchBuc
         ("no_history", _HISTORICAL_MATCH_LABELS["no_history"], counter.get("no_history", 0)),
     ]
     return [ResearchBucketCount(key=key, label=label, count=count) for key, label, count in buckets if count > 0]
+
+
+def _build_historical_like_event_count_breakdown(
+    counter: Counter[str],
+) -> list[ResearchBucketCount]:
+    return [
+        ResearchBucketCount(key=key, label=label, count=count)
+        for key, label, count in (
+            (key, label, counter.get(key, 0))
+            for key, label in _HISTORICAL_LIKE_EVENT_COUNT_BUCKETS
+        )
+        if count > 0
+    ]
 
 
 def _build_historical_match_gap_breakdown(counter: Counter[str]) -> list[ResearchBucketCount]:
@@ -1305,12 +1341,21 @@ _HISTORICAL_MATCH_PRIORITY = {
     "no_history": 4,
 }
 _HISTORICAL_LIKE_LEVELS = frozenset({"exact_pattern", "covered_pattern"})
+_HISTORICAL_LIKE_EVENT_COUNT_BUCKETS = (
+    ("1", "1 条历史高贴近事件"),
+    ("2_3", "2-3 条历史高贴近事件"),
+    ("4_plus", "4 条及以上历史高贴近事件"),
+)
+RESEARCH_HISTORICAL_LIKE_EVENT_COUNT_BUCKET_KEYS = tuple(
+    key for key, _ in _HISTORICAL_LIKE_EVENT_COUNT_BUCKETS
+)
 
 
 @dataclass(slots=True)
 class _HistoricalSignalMatchResult:
     level: str
     rate: float
+    like_event_count: int
     best_pattern_label: str | None
     overlap_signal_labels: list[str]
     current_only_signal_labels: list[str]
@@ -1397,6 +1442,7 @@ def _evaluate_historical_signal_match(
         return _HistoricalSignalMatchResult(
             level="no_history",
             rate=0.0,
+            like_event_count=0,
             best_pattern_label=None,
             overlap_signal_labels=[],
             current_only_signal_labels=[],
@@ -1415,6 +1461,7 @@ def _evaluate_historical_signal_match(
         return _HistoricalSignalMatchResult(
             level="no_overlap",
             rate=0.0,
+            like_event_count=0,
             best_pattern_label=None,
             overlap_signal_labels=[],
             current_only_signal_labels=[],
@@ -1433,6 +1480,7 @@ def _evaluate_historical_signal_match(
     best_matched_count = 0
     best_is_exact = False
     best_is_covered = False
+    like_event_count = 0
 
     for historical_candidate in historical_candidates:
         historical_signal_set = frozenset(historical_candidate.signal_keys)
@@ -1442,6 +1490,8 @@ def _evaluate_historical_signal_match(
 
         is_exact = historical_signal_set == current_signal_set
         is_covered = current_signal_set.issubset(historical_signal_set)
+        if is_exact or is_covered:
+            like_event_count += 1
         candidate = (
             -matched_count,
             -int(is_exact),
@@ -1474,6 +1524,7 @@ def _evaluate_historical_signal_match(
         return _HistoricalSignalMatchResult(
             level="no_overlap",
             rate=0.0,
+            like_event_count=like_event_count,
             best_pattern_label=None,
             overlap_signal_labels=[],
             current_only_signal_labels=[],
@@ -1511,6 +1562,7 @@ def _evaluate_historical_signal_match(
             numerator=best_matched_count,
             denominator=len(current_signal_set),
         ),
+        like_event_count=like_event_count,
         best_pattern_label=best_signal_candidate.pattern_label,
         overlap_signal_labels=_signal_labels_from_keys(overlap_signal_keys),
         current_only_signal_labels=_signal_labels_from_keys(current_only_signal_keys),
@@ -1646,6 +1698,16 @@ def _bucket_percent(value: Decimal | None) -> str:
 
 def _bucket_signal_streak(value: int) -> str:
     if value <= 1:
+        return "1"
+    if value <= 3:
+        return "2_3"
+    return "4_plus"
+
+
+def _bucket_historical_like_event_count(value: int) -> str | None:
+    if value <= 0:
+        return None
+    if value == 1:
         return "1"
     if value <= 3:
         return "2_3"

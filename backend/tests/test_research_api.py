@@ -400,6 +400,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "signal_pattern_breakdown": [],
         "signal_streak_breakdown": [],
         "historical_match_breakdown": [],
+        "historical_like_event_count_breakdown": [],
         "historical_match_gap_breakdown": [],
         "historical_replay_breakdown": [],
         "current_signal_group_breakdown": [],
@@ -707,6 +708,7 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "signal_pattern_breakdown": [],
         "signal_streak_breakdown": [],
         "historical_match_breakdown": [],
+        "historical_like_event_count_breakdown": [],
         "historical_match_gap_breakdown": [],
         "historical_replay_breakdown": [],
         "current_signal_group_breakdown": [],
@@ -922,6 +924,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "count": 1,
         }
     ]
+    assert baseline["historical_like_event_count_breakdown"] == []
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "openai / chatgpt",
@@ -983,6 +986,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
             "historical_match_gap_bucket": None,
             "historical_match_gap_label": None,
             "historical_match_gap_minutes": None,
+            "historical_like_event_count": 0,
         }
     ]
 
@@ -1116,6 +1120,7 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "count": 1,
         }
     ]
+    assert baseline["historical_like_event_count_breakdown"] == []
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "azure / chatgpt",
@@ -1177,6 +1182,7 @@ def test_research_overview_api_filters_current_signal_baseline() -> None:
             "historical_match_gap_bucket": None,
             "historical_match_gap_label": None,
             "historical_match_gap_minutes": None,
+            "historical_like_event_count": 0,
         }
     ]
 
@@ -1349,6 +1355,7 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "count": 1,
         }
     ]
+    assert baseline["historical_like_event_count_breakdown"] == []
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "azure / chatgpt",
@@ -1411,6 +1418,7 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
             "historical_match_gap_bucket": None,
             "historical_match_gap_label": None,
             "historical_match_gap_minutes": None,
+            "historical_like_event_count": 0,
         }
     ]
 
@@ -2389,6 +2397,13 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
             "count": 1,
         },
     ]
+    assert baseline["historical_like_event_count_breakdown"] == [
+        {
+            "key": "1",
+            "label": "1 条历史高贴近事件",
+            "count": 2,
+        }
+    ]
     assert baseline["historical_replay_breakdown"] == [
         {
             "event_id": 1,
@@ -2453,6 +2468,7 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
                     "historical_match_gap_bucket": "lt_15m",
                     "historical_match_gap_label": "15 分钟内",
                     "historical_match_gap_minutes": 5,
+                    "historical_like_event_count": 1,
                 },
                 {
                     "account_id": 4,
@@ -2483,6 +2499,7 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
                     "historical_match_gap_bucket": "lt_15m",
                     "historical_match_gap_label": "15 分钟内",
                     "historical_match_gap_minutes": 5,
+                    "historical_like_event_count": 1,
                 },
             ],
         }
@@ -2564,6 +2581,7 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
         "historical_match_gap_bucket": None,
         "historical_match_gap_label": None,
         "historical_match_gap_minutes": None,
+        "historical_like_event_count": 0,
     }
 
     app.dependency_overrides.clear()
@@ -2928,6 +2946,13 @@ def test_research_overview_api_filters_current_baseline_by_historical_event_id()
             "count": 1,
         }
     ]
+    assert baseline["historical_like_event_count_breakdown"] == [
+        {
+            "key": "1",
+            "label": "1 条历史高贴近事件",
+            "count": 1,
+        }
+    ]
     assert baseline["historical_replay_breakdown"] == [
         {
             "event_id": 2,
@@ -3193,6 +3218,13 @@ def test_research_overview_api_filters_current_baseline_by_match_level_and_strea
             "count": 1,
         }
     ]
+    assert baseline["historical_like_event_count_breakdown"] == [
+        {
+            "key": "1",
+            "label": "1 条历史高贴近事件",
+            "count": 1,
+        }
+    ]
     assert baseline["historical_match_gap_breakdown"] == [
         {"key": "lt_15m", "label": "15 分钟内", "count": 1},
         {"key": "15m_1h", "label": "15-60 分钟", "count": 0},
@@ -3254,6 +3286,7 @@ def test_research_overview_api_filters_current_baseline_by_match_level_and_strea
                     "historical_match_gap_bucket": "lt_15m",
                     "historical_match_gap_label": "15 分钟内",
                     "historical_match_gap_minutes": 10,
+                    "historical_like_event_count": 1,
                 }
             ],
         }
@@ -3492,6 +3525,13 @@ def test_research_overview_api_filters_current_baseline_by_historical_gap_bucket
             "count": 1,
         }
     ]
+    assert baseline["historical_like_event_count_breakdown"] == [
+        {
+            "key": "1",
+            "label": "1 条历史高贴近事件",
+            "count": 1,
+        }
+    ]
     assert baseline["historical_match_gap_breakdown"] == [
         {"key": "lt_15m", "label": "15 分钟内", "count": 1},
         {"key": "15m_1h", "label": "15-60 分钟", "count": 0},
@@ -3502,6 +3542,254 @@ def test_research_overview_api_filters_current_baseline_by_historical_gap_bucket
     assert [item["account_name"] for item in baseline["recent_samples"]] == ["Current-Fresh"]
     assert baseline["recent_samples"][0]["historical_match_gap_bucket"] == "lt_15m"
     assert baseline["recent_samples"][0]["historical_match_gap_minutes"] == 10
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_filters_current_baseline_by_historical_like_bucket() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=1),
+            scan_finished_at=base_time - timedelta(minutes=55),
+            total_accounts=5,
+            eligible_accounts=5,
+            scanned_accounts=5,
+            success_accounts=5,
+            failed_accounts=0,
+            new_401_events=3,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        historical_one = Account(
+            source_id=source.id,
+            auth_index="historical-one",
+            name="Historical-One",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time - timedelta(minutes=15),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time - timedelta(minutes=15),
+        )
+        historical_two = Account(
+            source_id=source.id,
+            auth_index="historical-two",
+            name="Historical-Two",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time - timedelta(minutes=10),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time - timedelta(minutes=10),
+        )
+        historical_three = Account(
+            source_id=source.id,
+            auth_index="historical-three",
+            name="Historical-Three",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time - timedelta(minutes=5),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time - timedelta(minutes=5),
+        )
+        current_double = Account(
+            source_id=source.id,
+            auth_index="current-double",
+            name="Current-Double",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("95.00"),
+            current_limit_reached=True,
+            current_allowed=False,
+            status_message="double match",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time,
+        )
+        current_single = Account(
+            source_id=source.id,
+            auth_index="current-single",
+            name="Current-Single",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_short_used_percent=Decimal("94.00"),
+            current_limit_reached=True,
+            current_last_checked_at=base_time - timedelta(minutes=1),
+            first_seen_at=base_time - timedelta(days=1),
+            last_seen_at=base_time - timedelta(minutes=1),
+        )
+        db.add_all(
+            [
+                historical_one,
+                historical_two,
+                historical_three,
+                current_double,
+                current_single,
+            ]
+        )
+        db.flush()
+
+        historical_one_snapshot = AccountSnapshot(
+            account_id=historical_one.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=25),
+            created_at=base_time - timedelta(minutes=25),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("95.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="double match",
+        )
+        historical_two_snapshot = AccountSnapshot(
+            account_id=historical_two.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=20),
+            created_at=base_time - timedelta(minutes=20),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("98.00"),
+            limit_reached=True,
+            allowed=False,
+            status_message="double match again",
+        )
+        historical_three_snapshot = AccountSnapshot(
+            account_id=historical_three.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=12),
+            created_at=base_time - timedelta(minutes=12),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            short_used_percent=Decimal("94.00"),
+            limit_reached=True,
+        )
+        db.add_all(
+            [
+                historical_one_snapshot,
+                historical_two_snapshot,
+                historical_three_snapshot,
+            ]
+        )
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=historical_one.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=15),
+                    related_snapshot_id=historical_one_snapshot.id,
+                    previous_snapshot_id=historical_one_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=15),
+                ),
+                AccountEvent(
+                    account_id=historical_two.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=10),
+                    related_snapshot_id=historical_two_snapshot.id,
+                    previous_snapshot_id=historical_two_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=10),
+                ),
+                AccountEvent(
+                    account_id=historical_three.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=5),
+                    related_snapshot_id=historical_three_snapshot.id,
+                    previous_snapshot_id=historical_three_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=5),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&current_historical_like_bucket=2_3",
+        )
+    )
+
+    assert response.status_code == 200
+    baseline = response.json()["current_signal_baseline"]
+    assert baseline["signal_accounts"] == 1
+    assert baseline["historical_like_event_count_breakdown"] == [
+        {
+            "key": "2_3",
+            "label": "2-3 条历史高贴近事件",
+            "count": 1,
+        }
+    ]
+    assert [item["account_name"] for item in baseline["recent_samples"]] == ["Current-Double"]
+    assert baseline["recent_samples"][0]["historical_like_event_count"] == 2
+    assert baseline["current_signal_group_breakdown"][0]["top_historical_like_samples"][0][
+        "historical_like_event_count"
+    ] == 2
 
     app.dependency_overrides.clear()
 
@@ -3595,6 +3883,38 @@ def test_research_overview_api_rejects_unknown_current_match_level() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Unsupported current_match_level: unknown_level"
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_rejects_unknown_current_historical_like_bucket() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    response = asyncio.run(
+        _request("GET", "/api/v1/research/overview?window_days=7&current_historical_like_bucket=unknown_bucket")
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Unsupported current_historical_like_bucket: unknown_bucket"
+    )
 
     app.dependency_overrides.clear()
 

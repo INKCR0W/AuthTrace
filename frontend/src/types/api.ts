@@ -144,6 +144,7 @@ export interface ResearchCurrentSignalSample {
   historical_match_gap_bucket: string | null;
   historical_match_gap_label: string | null;
   historical_match_gap_minutes: number | null;
+  historical_like_event_count: number;
 }
 
 export interface ResearchCurrentSignalGroupSample {
@@ -166,6 +167,7 @@ export interface ResearchCurrentSignalGroupSample {
   historical_match_gap_bucket: string | null;
   historical_match_gap_label: string | null;
   historical_match_gap_minutes: number | null;
+  historical_like_event_count: number;
 }
 
 export interface ResearchCurrentSignalGroupBreakdownItem {
@@ -209,6 +211,7 @@ export interface ResearchCurrentSignalBaseline {
   signal_pattern_breakdown: ResearchBucketCount[];
   signal_streak_breakdown: ResearchBucketCount[];
   historical_match_breakdown: ResearchBucketCount[];
+  historical_like_event_count_breakdown: ResearchBucketCount[];
   historical_match_gap_breakdown: ResearchBucketCount[];
   historical_replay_breakdown: ResearchHistoricalReplayBreakdownItem[];
   current_signal_group_breakdown: ResearchCurrentSignalGroupBreakdownItem[];
