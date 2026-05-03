@@ -113,6 +113,18 @@ interface ResearchRouteState {
   currentHistoricalEventId: string;
 }
 
+interface ResearchPriorityCard {
+  key: string;
+  kicker: string;
+  title: string;
+  summary: string;
+  scopeHint?: string;
+  actionLabel?: string;
+  activeLabel?: string;
+  actionDisabled?: boolean;
+  onAction?: () => void;
+}
+
 const researchRouteQueryKeys = [
   "window_days",
   "provider",
@@ -595,6 +607,85 @@ const leadingHistoricalReplaySummary = computed(() => {
   }
 
   return `${item.event_account_name} 这条历史 401 证据当前被 ${formatCount(item.matched_current_accounts)} / ${formatCount(baseline.signal_accounts)} 个样本复现，可优先按这条历史样本回放。`;
+});
+const researchPriorityCards = computed<ResearchPriorityCard[]>(() => {
+  const cards: ResearchPriorityCard[] = [];
+
+  if (leadingHistoricalReplay.value && leadingHistoricalReplaySummary.value) {
+    cards.push({
+      key: "historical-replay",
+      kicker: "优先回放",
+      title: `历史样本 ${leadingHistoricalReplay.value.event_account_name}`,
+      summary: leadingHistoricalReplaySummary.value,
+      scopeHint: `历史事件时间：${formatDateTime(leadingHistoricalReplay.value.event_time)}`,
+      actionLabel: "筛到历史回放",
+      activeLabel: "已筛到历史回放",
+      actionDisabled: isCurrentHistoricalEventFilterActive(leadingHistoricalReplay.value.event_id),
+      onAction: () => applyCurrentHistoricalEventFilter(leadingHistoricalReplay.value!.event_id),
+    });
+  }
+
+  if (leadingHistoricalLikeGroup.value && leadingHistoricalLikeGroupSummary.value) {
+    cards.push({
+      key: "current-group",
+      kicker: "优先复验",
+      title: `组合 ${leadingHistoricalLikeGroup.value.label}`,
+      summary: leadingHistoricalLikeGroupSummary.value,
+      scopeHint: `provider=${leadingHistoricalLikeGroup.value.provider ?? "未标记"} / type=${leadingHistoricalLikeGroup.value.account_type ?? "未标记"}`,
+      actionLabel: "切到该组合",
+      activeLabel: "已切到该组合",
+      actionDisabled: isScopeFilterActive(
+        leadingHistoricalLikeGroup.value.provider,
+        leadingHistoricalLikeGroup.value.account_type,
+      ),
+      onAction: () =>
+        applyScopeFilter(
+          leadingHistoricalLikeGroup.value!.provider,
+          leadingHistoricalLikeGroup.value!.account_type,
+        ),
+    });
+  }
+
+  if (leadingSignalComparison.value && leadingSignalComparisonSummary.value) {
+    cards.push({
+      key: "pre-401-signal",
+      kicker: "前序信号",
+      title: `优先关注 ${leadingSignalComparison.value.label}`,
+      summary: leadingSignalComparisonSummary.value,
+      actionLabel: "筛到前序信号",
+      activeLabel: "已筛到前序信号",
+      actionDisabled: isPre401SignalFilterActive(leadingSignalComparison.value.key),
+      onAction: () => applyPre401SignalFilter(leadingSignalComparison.value!.key),
+    });
+  }
+
+  if (leadingSignalPatternComparison.value && leadingSignalPatternComparisonSummary.value) {
+    cards.push({
+      key: "pre-401-pattern",
+      kicker: "前序模式",
+      title: `优先关注组合 ${leadingSignalPatternComparison.value.label}`,
+      summary: leadingSignalPatternComparisonSummary.value,
+      actionLabel: "筛到前序模式",
+      activeLabel: "已筛到前序模式",
+      actionDisabled: isPre401SignalPatternFilterActive(leadingSignalPatternComparison.value.key),
+      onAction: () => applyPre401SignalPatternFilter(leadingSignalPatternComparison.value!.key),
+    });
+  }
+
+  if (cards.length < 4 && dominantCurrentSignalPattern.value && dominantCurrentSignalPatternSummary.value) {
+    cards.push({
+      key: "current-pattern",
+      kicker: "当前基线",
+      title: `主导模式 ${dominantCurrentSignalPattern.value.label}`,
+      summary: dominantCurrentSignalPatternSummary.value,
+      actionLabel: "筛到当前模式",
+      activeLabel: "已筛到当前模式",
+      actionDisabled: isCurrentSignalPatternFilterActive(dominantCurrentSignalPattern.value.key),
+      onAction: () => applyCurrentSignalPatternFilter(dominantCurrentSignalPattern.value!.key),
+    });
+  }
+
+  return cards.slice(0, 4);
 });
 
 function syncFilters(next: Partial<typeof filters>) {
@@ -1449,6 +1540,29 @@ watch(
       <p v-if="overview.summary.became_401_events === 0" class="feedback">
         {{ hasScopedFilters ? "当前筛选范围内" : "当前历史库里" }} 还没有 `became_401` 事件。下面展示的是仍为非 `401` 账号的研究信号基线，只用于后续样本积累，不代表账号异常。
       </p>
+
+      <div v-if="researchPriorityCards.length" class="panel-grid">
+        <article v-for="item in researchPriorityCards" :key="item.key" class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">{{ item.kicker }}</p>
+              <h3>{{ item.title }}</h3>
+            </div>
+          </div>
+          <p>{{ item.summary }}</p>
+          <p v-if="item.scopeHint" class="subtle-line">{{ item.scopeHint }}</p>
+          <div v-if="item.actionLabel && item.onAction" class="table-action-stack">
+            <button
+              class="ghost-button compact-button mini-action-button"
+              type="button"
+              :disabled="item.actionDisabled"
+              @click="item.onAction"
+            >
+              {{ item.actionDisabled ? item.activeLabel ?? item.actionLabel : item.actionLabel }}
+            </button>
+          </div>
+        </article>
+      </div>
 
       <div class="panel-grid">
         <article class="panel chart-panel">
