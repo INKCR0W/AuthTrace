@@ -15,8 +15,8 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-authtrace}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-authtrace}"
       TZ: "${AUTHTRACE_TIMEZONE:-UTC}"
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -59,8 +59,8 @@ services:
       AUTHTRACE_MANAGEMENT_SHORT_QUOTA_THRESHOLD: "${AUTHTRACE_MANAGEMENT_SHORT_QUOTA_THRESHOLD:-95}"
       AUTHTRACE_DB_WAIT_ATTEMPTS: "${AUTHTRACE_DB_WAIT_ATTEMPTS:-30}"
       AUTHTRACE_DB_WAIT_INTERVAL_SECONDS: "${AUTHTRACE_DB_WAIT_INTERVAL_SECONDS:-2}"
-    ports:
-      - "${AUTHTRACE_BACKEND_PORT:-8000}:8000"
+    expose:
+      - "8000"
     healthcheck:
       test:
         [
@@ -81,7 +81,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${AUTHTRACE_PUBLIC_PORT:-8080}:80"
+      - "${AUTHTRACE_PUBLIC_HOST:-127.0.0.1}:${AUTHTRACE_PUBLIC_PORT:-8080}:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
       interval: 15s

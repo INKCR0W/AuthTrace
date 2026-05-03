@@ -46,8 +46,9 @@ docker compose up -d --build
 默认入口：
 
 - 前端：`http://127.0.0.1:8080`
-- 后端健康检查：`http://127.0.0.1:8000/health`
 - 同源 API 健康检查：`http://127.0.0.1:8080/api/v1/health`
+
+默认部署形态下，只有前端端口绑定到宿主机本地回环地址 `127.0.0.1`；后端和数据库都不暴露宿主机端口，只允许编排内部网络访问。前端容器通过 `http://backend:8000` 调用后端，后端通过 `postgres:5432` 访问数据库。如需对局域网或反向代理开放前端入口，可显式调整 `.env` 中的 `AUTHTRACE_PUBLIC_HOST`。
 
 ## 关键环境变量
 
@@ -55,6 +56,7 @@ docker compose up -d --build
 - `AUTHTRACE_MANAGEMENT_TOKEN`：管理端访问令牌
 - `AUTHTRACE_SCHEDULER_ENABLED`：是否启用自动扫描
 - `AUTHTRACE_SCHEDULER_INTERVAL_MINUTES`：扫描间隔分钟数
+- `AUTHTRACE_PUBLIC_HOST`：前端宿主机监听地址，默认 `127.0.0.1`
 - `AUTHTRACE_DOCKER_LOG_MAX_SIZE`：单个容器日志文件滚动阈值
 - `AUTHTRACE_DOCKER_LOG_MAX_FILE`：容器日志保留份数
 - `AUTHTRACE_BACKUP_DIR`：数据库备份输出目录
