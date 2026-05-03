@@ -6,6 +6,7 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from collections.abc import AsyncIterator
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -96,11 +97,22 @@ async def run_auth_file_sync(
             seen_at=started_at,
             settings=settings,
         )
+        persisted_scan_job = db.get(ScanJob, scan_job_id)
+        if persisted_scan_job is None:
+            raise RuntimeError("scan job not found after account sync")
+        _mark_scan_job_accounts_synced(
+            persisted_scan_job,
+            started_at=started_at,
+            sync_result=sync_result,
+        )
+        db.commit()
+
         usage_scan_stats = await _scan_usage_for_eligible_accounts(
             db,
             client=client,
             synced_auth_files=sync_result.eligible_auth_files,
             scan_job_id=scan_job_id,
+            started_at=started_at,
             settings=settings,
         )
         persisted_scan_job = db.get(ScanJob, scan_job_id)
@@ -140,6 +152,18 @@ async def run_auth_file_sync(
         raise
 
 
+def _mark_scan_job_accounts_synced(
+    scan_job: ScanJob,
+    *,
+    started_at: datetime,
+    sync_result: AuthFileSyncResult,
+) -> None:
+    finished_at = _utcnow()
+    scan_job.total_accounts = sync_result.total_accounts
+    scan_job.eligible_accounts = sync_result.eligible_accounts
+    scan_job.duration_ms = _duration_ms(started_at=started_at, finished_at=finished_at)
+
+
 def _mark_scan_job_success(
     scan_job: ScanJob,
     *,
@@ -175,6 +199,7 @@ async def _scan_usage_for_eligible_accounts(
     client: ManagementApiClient,
     synced_auth_files: list[SyncedAuthFile],
     scan_job_id: int,
+    started_at: datetime,
     settings: Settings,
 ) -> UsageScanStats:
     scanned_accounts = 0
@@ -185,7 +210,7 @@ async def _scan_usage_for_eligible_accounts(
 
     weekly_threshold = Decimal(str(settings.management_weekly_quota_threshold))
     short_threshold = Decimal(str(settings.management_short_quota_threshold))
-    probe_results = await _probe_eligible_accounts(
+    async for probe_result in _iter_probe_eligible_accounts(
         client=client,
         synced_auth_files=synced_auth_files,
         weekly_threshold=weekly_threshold,
@@ -193,9 +218,7 @@ async def _scan_usage_for_eligible_accounts(
         concurrency=settings.management_probe_concurrency,
         delay_min_seconds=settings.management_probe_delay_min_seconds,
         delay_max_seconds=settings.management_probe_delay_max_seconds,
-    )
-
-    for probe_result in probe_results:
+    ):
         scanned_accounts += 1
         synced = probe_result.synced
         checked_at = probe_result.checked_at
@@ -229,23 +252,34 @@ async def _scan_usage_for_eligible_accounts(
 
         if result.snapshot_status != "success":
             failed_accounts += 1
-            continue
+        else:
+            event_stats = _create_events_for_snapshot(
+                db,
+                account=synced.account,
+                previous_snapshot=previous_snapshot,
+                current_snapshot=snapshot,
+            )
+            new_401_events += event_stats.new_401_events
+            new_quota_events += event_stats.new_quota_events
 
-        event_stats = _create_events_for_snapshot(
+            success_accounts += 1
+            _apply_current_state_from_probe_result(
+                synced.account,
+                result=result,
+                checked_at=checked_at,
+            )
+
+        _mark_scan_job_usage_progress(
             db,
-            account=synced.account,
-            previous_snapshot=previous_snapshot,
-            current_snapshot=snapshot,
+            scan_job_id=scan_job_id,
+            started_at=started_at,
+            scanned_accounts=scanned_accounts,
+            success_accounts=success_accounts,
+            failed_accounts=failed_accounts,
+            new_401_events=new_401_events,
+            new_quota_events=new_quota_events,
         )
-        new_401_events += event_stats.new_401_events
-        new_quota_events += event_stats.new_quota_events
-
-        success_accounts += 1
-        _apply_current_state_from_probe_result(
-            synced.account,
-            result=result,
-            checked_at=checked_at,
-        )
+        db.commit()
 
     db.flush()
     return UsageScanStats(
@@ -257,7 +291,30 @@ async def _scan_usage_for_eligible_accounts(
     )
 
 
-async def _probe_eligible_accounts(
+def _mark_scan_job_usage_progress(
+    db: Session,
+    *,
+    scan_job_id: int,
+    started_at: datetime,
+    scanned_accounts: int,
+    success_accounts: int,
+    failed_accounts: int,
+    new_401_events: int,
+    new_quota_events: int,
+) -> None:
+    scan_job = db.get(ScanJob, scan_job_id)
+    if scan_job is None:
+        raise RuntimeError("scan job not found while updating usage progress")
+    finished_at = _utcnow()
+    scan_job.scanned_accounts = scanned_accounts
+    scan_job.success_accounts = success_accounts
+    scan_job.failed_accounts = failed_accounts
+    scan_job.new_401_events = new_401_events
+    scan_job.new_quota_events = new_quota_events
+    scan_job.duration_ms = _duration_ms(started_at=started_at, finished_at=finished_at)
+
+
+async def _iter_probe_eligible_accounts(
     *,
     client: ManagementApiClient,
     synced_auth_files: list[SyncedAuthFile],
@@ -266,7 +323,7 @@ async def _probe_eligible_accounts(
     concurrency: int,
     delay_min_seconds: float,
     delay_max_seconds: float,
-) -> list[ProbeExecutionResult]:
+) -> AsyncIterator[ProbeExecutionResult]:
     semaphore = asyncio.Semaphore(concurrency)
 
     async def _run_probe(synced: SyncedAuthFile) -> ProbeExecutionResult:
@@ -286,8 +343,9 @@ async def _probe_eligible_accounts(
             result=result,
         )
 
-    tasks = [_run_probe(synced) for synced in synced_auth_files]
-    return await asyncio.gather(*tasks)
+    tasks = [asyncio.create_task(_run_probe(synced)) for synced in synced_auth_files]
+    for task in asyncio.as_completed(tasks):
+        yield await task
 
 
 async def _probe_account_usage(

@@ -21,6 +21,7 @@ from app.models.account_event import AccountEvent
 from app.models.account_snapshot import AccountSnapshot
 from app.models.management_source import ManagementSource
 from app.models.scan_job import ScanJob
+from app.services.auth_file_sync import run_auth_file_sync
 
 
 class FakeManagementClient:
@@ -355,6 +356,83 @@ def test_sync_auth_files_limits_probe_concurrency() -> None:
         assert len(snapshots) == 5
 
     app.dependency_overrides.clear()
+
+
+def test_sync_auth_files_persists_running_progress_during_delayed_probes() -> None:
+    session_factory = _create_session_factory()
+    fake_client = FakeManagementClient(
+        auth_files=[
+            {
+                "name": f"Alpha-{index}",
+                "auth_index": f"auth-{index}",
+                "type": "chatgpt",
+                "provider": "openai",
+                "disabled": False,
+                "status": "active",
+            }
+            for index in range(1, 6)
+        ],
+        probe_results={
+            f"auth-{index}": {
+                "status_code": 200,
+                "body": {
+                    "rate_limit": {
+                        "individual_window": {
+                            "used_percent": 40 + index,
+                            "reset_at": "2026-05-02T00:00:00Z",
+                            "limit_window_seconds": 604800,
+                            "remaining": 100 - index,
+                            "limit_reached": False,
+                        },
+                        "allowed": True,
+                    }
+                },
+            }
+            for index in range(1, 6)
+        },
+        probe_delay_seconds=0.05,
+    )
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+        AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY=1,
+    )
+
+    async def run_and_observe_progress() -> tuple[bool, bool]:
+        with session_factory() as run_db:
+            task = asyncio.create_task(
+                run_auth_file_sync(
+                    run_db,
+                    settings=settings,
+                    client=fake_client,
+                    trigger_mode="manual",
+                )
+            )
+            saw_account_totals = False
+            saw_partial_probe_progress = False
+
+            for _ in range(100):
+                await asyncio.sleep(0.01)
+                with session_factory() as inspect_db:
+                    scan_job = inspect_db.scalar(select(ScanJob).order_by(ScanJob.id.desc()).limit(1))
+                    if scan_job is None or scan_job.status != "running":
+                        continue
+                    if scan_job.total_accounts == 5 and scan_job.eligible_accounts == 5:
+                        saw_account_totals = True
+                    if 0 < scan_job.scanned_accounts < 5:
+                        saw_partial_probe_progress = True
+                if saw_account_totals and saw_partial_probe_progress:
+                    break
+
+            response = await task
+            assert response.scanned_accounts == 5
+            return saw_account_totals, saw_partial_probe_progress
+
+    saw_account_totals, saw_partial_probe_progress = asyncio.run(run_and_observe_progress())
+
+    assert saw_account_totals is True
+    assert saw_partial_probe_progress is True
 
 
 def test_sync_auth_files_rejects_when_running_scan_job_exists() -> None:
