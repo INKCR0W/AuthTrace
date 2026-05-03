@@ -27,6 +27,7 @@ from app.schemas.research import (
     ResearchPre401Insights,
     ResearchSignalComparisonItem,
     ResearchSignalPatternComparisonItem,
+    ResearchStatusMessageComparisonItem,
 )
 
 
@@ -148,6 +149,10 @@ def get_research_overview_api(
         signal_comparison=[
             ResearchSignalComparisonItem.model_validate(item)
             for item in overview.signal_comparison
+        ],
+        status_message_comparison=[
+            ResearchStatusMessageComparisonItem.model_validate(item)
+            for item in overview.status_message_comparison
         ],
         signal_pattern_comparison=[
             ResearchSignalPatternComparisonItem.model_validate(item)

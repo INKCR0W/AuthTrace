@@ -15,6 +15,7 @@ import type {
   ResearchEventSample,
   ResearchHistoricalReplayBreakdownItem,
   ResearchOverviewResponse,
+  ResearchStatusMessageComparisonItem,
 } from "@/types/api";
 
 const CURRENT_SIGNAL_OPTIONS = [
@@ -547,6 +548,13 @@ const leadingSignalComparison = computed(() => {
   }
   return item;
 });
+const leadingStatusMessageComparison = computed<ResearchStatusMessageComparisonItem | null>(() => {
+  const item = overview.value?.status_message_comparison[0] ?? null;
+  if (!item || item.rate_gap <= 0) {
+    return null;
+  }
+  return item;
+});
 const leadingSignalPatternComparison = computed(() => {
   const item = overview.value?.signal_pattern_comparison[0] ?? null;
   if (!item || item.rate_gap <= 0) {
@@ -601,6 +609,14 @@ const leadingSignalComparisonSummary = computed(() => {
   }
 
   return `${item.label} 在历史 401 前的命中率比当前基线高 ${formatPercent(item.rate_gap)}，可优先作为前序研究信号关注。`;
+});
+const leadingStatusMessageComparisonSummary = computed(() => {
+  const item = leadingStatusMessageComparison.value;
+  if (!item) {
+    return "";
+  }
+
+  return `消息“${item.label}”在历史 401 前的命中率比当前基线高 ${formatPercent(item.rate_gap)}，可优先围绕同类状态文案回放前序样本。`;
 });
 const leadingSignalPatternComparisonSummary = computed(() => {
   const item = leadingSignalPatternComparison.value;
@@ -688,6 +704,19 @@ const researchPriorityCards = computed<ResearchPriorityCard[]>(() => {
       activeLabel: "已筛到前序信号",
       actionDisabled: isPre401SignalFilterActive(leadingSignalComparison.value.key),
       onAction: () => applyPre401SignalFilter(leadingSignalComparison.value!.key),
+    });
+  }
+
+  if (cards.length < 4 && leadingStatusMessageComparison.value && leadingStatusMessageComparisonSummary.value) {
+    cards.push({
+      key: "pre-401-status-message",
+      kicker: "前序消息",
+      title: `优先关注消息 ${leadingStatusMessageComparison.value.label}`,
+      summary: leadingStatusMessageComparisonSummary.value,
+      actionLabel: "筛到前序消息",
+      activeLabel: "已筛到前序消息",
+      actionDisabled: isPre401StatusMessageFilterActive(leadingStatusMessageComparison.value.key),
+      onAction: () => applyPre401StatusMessageFilter(leadingStatusMessageComparison.value!.key),
     });
   }
 
@@ -1593,7 +1622,7 @@ watch(
       "
       class="subtle-line"
     >
-      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前消息 / 当前模式 / 并发信号数 / 前序信号 / 前序消息 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
+      “信号对照”“消息对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前消息 / 当前模式 / 并发信号数 / 前序信号 / 前序消息 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
@@ -2033,6 +2062,73 @@ watch(
                       type="button"
                       :disabled="isPre401SignalFilterActive(item.key)"
                       @click="applyPre401SignalFilter(item.key)"
+                    >
+                      前序
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">消息对照</p>
+            <h3>哪些 status_message 更像历史 401 前线索</h3>
+          </div>
+        </div>
+
+        <p v-if="leadingStatusMessageComparisonSummary" class="subtle-line">
+          {{ leadingStatusMessageComparisonSummary }}
+        </p>
+        <p v-else-if="!hasHistoricalPreviousSamples" class="subtle-line">
+          当前范围内还没有可回放的历史 `401` 前样本，消息对照会在出现前序证据后自动启用；现阶段可先从当前消息高频摘要里观察线索。
+        </p>
+        <p v-else class="subtle-line">
+          当前范围内还没有出现“历史命中率明显高于当前基线”的消息摘要，需继续积累样本或结合信号/组合差值判断。
+        </p>
+
+        <div v-if="overview.status_message_comparison.length" class="table-wrap">
+          <table class="data-table compact">
+            <thead>
+              <tr>
+                <th>消息摘要</th>
+                <th>历史前序样本</th>
+                <th>历史命中率</th>
+                <th>当前基线账号</th>
+                <th>当前命中率</th>
+                <th>历史-当前</th>
+                <th>下钻</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in overview.status_message_comparison" :key="`status-message-comparison-${item.key}`">
+                <td>
+                  <strong>{{ item.label }}</strong>
+                </td>
+                <td>{{ formatCount(item.pre_401_count) }}</td>
+                <td>{{ formatPercent(item.pre_401_rate) }}</td>
+                <td>{{ formatCount(item.current_count) }}</td>
+                <td>{{ formatPercent(item.current_rate) }}</td>
+                <td>{{ formatPercent(item.rate_gap) }}</td>
+                <td class="table-action-cell">
+                  <div class="table-action-stack">
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isCurrentStatusMessageFilterActive(item.key)"
+                      @click="applyCurrentStatusMessageFilter(item.key)"
+                    >
+                      当前
+                    </button>
+                    <button
+                      class="ghost-button compact-button mini-action-button"
+                      type="button"
+                      :disabled="isPre401StatusMessageFilterActive(item.key)"
+                      @click="applyPre401StatusMessageFilter(item.key)"
                     >
                       前序
                     </button>

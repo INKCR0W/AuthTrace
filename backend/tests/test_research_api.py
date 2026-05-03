@@ -356,6 +356,20 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "remaining_empty": (1, 33.33, 0, 0.0, 33.33),
         "status_message_present": (2, 66.67, 0, 0.0, 66.67),
     }
+    status_message_comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in payload["status_message_comparison"]
+    }
+    assert status_message_comparison == {
+        "usage_limit_reached: The usage limit has been reached": (1, 33.33, 0, 0.0, 33.33),
+        "warmup": (1, 33.33, 0, 0.0, 33.33),
+    }
     signal_pattern_comparison = {
         item["key"]: (
             item["pre_401_count"],
@@ -895,6 +909,7 @@ def test_research_overview_api_returns_current_signal_baseline_without_401_event
     assert payload["summary"]["became_401_events"] == 0
     assert payload["recent_event_samples"] == []
     assert payload["signal_comparison"] == []
+    assert payload["status_message_comparison"] == []
     assert payload["signal_pattern_comparison"] == []
     baseline = payload["current_signal_baseline"]
     assert baseline["observed_accounts"] == 2
@@ -1555,6 +1570,7 @@ def test_research_overview_api_applies_current_signal_key_filter() -> None:
         }
     ]
     assert payload["signal_comparison"] == []
+    assert payload["status_message_comparison"] == []
     assert payload["signal_pattern_comparison"] == []
     assert baseline["recent_samples"] == [
         {
@@ -2105,6 +2121,189 @@ def test_research_overview_api_applies_pre_401_signal_key_filter() -> None:
         "weekly_ge_90|limit_reached|allowed_false": (0, 0.0, 1, 100.0, -100.0),
     }
     assert payload["current_signal_baseline"]["signal_accounts"] == 1
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_compares_status_messages_between_history_and_current() -> None:
+    session_factory = _create_session_factory()
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+        source = ManagementSource(
+            source_key=settings.management_source_key,
+            source_name=settings.management_source_name,
+            base_url=settings.management_base_url or "",
+            is_enabled=True,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="scheduler",
+            status="success",
+            scan_started_at=base_time - timedelta(hours=3),
+            scan_finished_at=base_time - timedelta(hours=3) + timedelta(minutes=3),
+            total_accounts=4,
+            eligible_accounts=4,
+            scanned_accounts=4,
+            success_accounts=4,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        warmup_hot = Account(
+            source_id=source.id,
+            auth_index="auth-warmup-hot",
+            name="Warmup-Hot",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        soft_block_hot = Account(
+            source_id=source.id,
+            auth_index="auth-soft-block-hot",
+            name="SoftBlock-Hot",
+            provider="azure",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        soft_block_current = Account(
+            source_id=source.id,
+            auth_index="auth-soft-block-current",
+            name="SoftBlock-Current",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            status_message="soft_block",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        burst_current = Account(
+            source_id=source.id,
+            auth_index="auth-burst-current",
+            name="Burst-Current",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            status_message="burst window",
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        db.add_all([warmup_hot, soft_block_hot, soft_block_current, burst_current])
+        db.flush()
+
+        warmup_snapshot = AccountSnapshot(
+            account_id=warmup_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=1, minutes=15),
+            created_at=base_time - timedelta(hours=1, minutes=15),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            status_message="warmup",
+        )
+        soft_block_snapshot = AccountSnapshot(
+            account_id=soft_block_hot.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=2, minutes=15),
+            created_at=base_time - timedelta(hours=2, minutes=15),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            status_message="soft_block",
+        )
+        db.add_all([warmup_snapshot, soft_block_snapshot])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=warmup_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=1),
+                    related_snapshot_id=warmup_snapshot.id,
+                    previous_snapshot_id=warmup_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=1),
+                ),
+                AccountEvent(
+                    account_id=soft_block_hot.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(hours=2),
+                    related_snapshot_id=soft_block_snapshot.id,
+                    previous_snapshot_id=soft_block_snapshot.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(hours=2),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(_request("GET", "/api/v1/research/overview?window_days=7"))
+
+    assert response.status_code == 200
+    comparison = {
+        item["key"]: (
+            item["pre_401_count"],
+            item["pre_401_rate"],
+            item["current_count"],
+            item["current_rate"],
+            item["rate_gap"],
+        )
+        for item in response.json()["status_message_comparison"]
+    }
+    assert list(comparison) == ["warmup", "soft_block", "burst window"]
+    assert comparison == {
+        "warmup": (1, 50.0, 0, 0.0, 50.0),
+        "soft_block": (1, 50.0, 1, 50.0, 0.0),
+        "burst window": (0, 0.0, 1, 50.0, -50.0),
+    }
 
     app.dependency_overrides.clear()
 

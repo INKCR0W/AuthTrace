@@ -75,6 +75,17 @@ class ResearchSignalPatternComparisonItem:
 
 
 @dataclass(slots=True)
+class ResearchStatusMessageComparisonItem:
+    key: str
+    label: str
+    pre_401_count: int
+    pre_401_rate: float
+    current_count: int
+    current_rate: float
+    rate_gap: float
+
+
+@dataclass(slots=True)
 class ResearchPre401Insights:
     sampled_events: int
     events_with_previous_snapshot: int
@@ -223,6 +234,7 @@ class ResearchOverview:
     provider_account_type_breakdown: list[ResearchCombinationBreakdownItem]
     event_hour_distribution: list[ResearchHourlyDistributionPoint]
     signal_comparison: list[ResearchSignalComparisonItem]
+    status_message_comparison: list[ResearchStatusMessageComparisonItem]
     signal_pattern_comparison: list[ResearchSignalPatternComparisonItem]
     pre_401_insights: ResearchPre401Insights
     recent_event_samples: list[ResearchEventSample]
@@ -363,6 +375,11 @@ def get_research_overview(
         ),
         event_hour_distribution=_build_event_hour_distribution(event_rows),
         signal_comparison=_build_signal_comparison(
+            db,
+            event_rows=event_rows,
+            filters=scope_filters,
+        ),
+        status_message_comparison=_build_status_message_comparison(
             db,
             event_rows=event_rows,
             filters=scope_filters,
@@ -610,6 +627,80 @@ def _build_signal_comparison(
             item.label,
         ),
     )
+
+
+def _build_status_message_comparison(
+    db: Session,
+    *,
+    event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
+    filters: ResearchOverviewFilters,
+) -> list[ResearchStatusMessageComparisonItem]:
+    previous_snapshots = [snapshot for _, _, snapshot in event_rows if snapshot is not None]
+    if not previous_snapshots:
+        return []
+
+    pre_401_counter = Counter[str]()
+    for snapshot in previous_snapshots:
+        status_message_excerpt = _build_status_message_excerpt(snapshot.status_message)
+        if status_message_excerpt:
+            pre_401_counter[status_message_excerpt] += 1
+
+    current_accounts = list(
+        db.scalars(
+            select(Account).where(
+                *_build_account_scope_conditions(filters),
+                Account.disabled.is_(False),
+                Account.current_is_401.is_(False),
+            )
+        )
+    )
+    current_counter = Counter[str]()
+    for account in current_accounts:
+        status_message_excerpt = _build_status_message_excerpt(account.status_message)
+        if status_message_excerpt:
+            current_counter[status_message_excerpt] += 1
+
+    pre_401_denominator = len(previous_snapshots)
+    current_denominator = len(current_accounts)
+    items = [
+        ResearchStatusMessageComparisonItem(
+            key=message,
+            label=message,
+            pre_401_count=pre_401_counter.get(message, 0),
+            pre_401_rate=_to_rate_percent(
+                numerator=pre_401_counter.get(message, 0),
+                denominator=pre_401_denominator,
+            ),
+            current_count=current_counter.get(message, 0),
+            current_rate=_to_rate_percent(
+                numerator=current_counter.get(message, 0),
+                denominator=current_denominator,
+            ),
+            rate_gap=round(
+                _to_rate_percent(
+                    numerator=pre_401_counter.get(message, 0),
+                    denominator=pre_401_denominator,
+                )
+                - _to_rate_percent(
+                    numerator=current_counter.get(message, 0),
+                    denominator=current_denominator,
+                ),
+                2,
+            ),
+        )
+        for message in set(pre_401_counter) | set(current_counter)
+    ]
+    return sorted(
+        items,
+        key=lambda item: (
+            -int(item.pre_401_count > 0 or item.current_count > 0),
+            -item.rate_gap,
+            -item.pre_401_count,
+            -item.current_count,
+            item.label,
+            item.key,
+        ),
+    )[:8]
 
 
 def _build_recent_event_samples(

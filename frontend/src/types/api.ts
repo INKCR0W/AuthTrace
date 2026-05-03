@@ -104,6 +104,16 @@ export interface ResearchSignalPatternComparisonItem {
   rate_gap: number;
 }
 
+export interface ResearchStatusMessageComparisonItem {
+  key: string;
+  label: string;
+  pre_401_count: number;
+  pre_401_rate: number;
+  current_count: number;
+  current_rate: number;
+  rate_gap: number;
+}
+
 export interface ResearchPre401Insights {
   sampled_events: number;
   events_with_previous_snapshot: number;
@@ -226,6 +236,7 @@ export interface ResearchOverviewResponse {
   provider_account_type_breakdown: ResearchCombinationBreakdownItem[];
   event_hour_distribution: ResearchHourlyDistributionPoint[];
   signal_comparison: ResearchSignalComparisonItem[];
+  status_message_comparison: ResearchStatusMessageComparisonItem[];
   signal_pattern_comparison: ResearchSignalPatternComparisonItem[];
   pre_401_insights: ResearchPre401Insights;
   recent_event_samples: ResearchEventSample[];
