@@ -15,6 +15,7 @@ class DefaultManagementSourceResponse(BaseModel):
     scheduler_enabled: bool
     scheduler_running: bool
     scheduler_interval_minutes: int
+    scheduler_jitter_seconds: int
     scheduler_next_run_at: str | None = None
     scheduler_last_started_at: str | None = None
     scheduler_last_finished_at: str | None = None

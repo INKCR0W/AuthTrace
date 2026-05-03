@@ -50,6 +50,29 @@ def test_settings_accepts_json_array_cors_origins_from_env_file(tmp_path: Path) 
     )
 
 
+def test_settings_accepts_probe_delay_and_scheduler_jitter_from_env_file(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "AUTHTRACE_DATABASE_URL=sqlite+pysqlite:///:memory:",
+                "AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY=1",
+                "AUTHTRACE_MANAGEMENT_PROBE_DELAY_MIN_SECONDS=0.5",
+                "AUTHTRACE_MANAGEMENT_PROBE_DELAY_MAX_SECONDS=2.5",
+                "AUTHTRACE_SCHEDULER_JITTER_SECONDS=90",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.management_probe_concurrency == 1
+    assert settings.management_probe_delay_min_seconds == 0.5
+    assert settings.management_probe_delay_max_seconds == 2.5
+    assert settings.scheduler_jitter_seconds == 90
+
+
 def test_ensure_default_management_source_recovers_from_concurrent_insert(tmp_path: Path) -> None:
     db_path = tmp_path / "authtrace.sqlite3"
     engine = create_engine(f"sqlite+pysqlite:///{db_path}")

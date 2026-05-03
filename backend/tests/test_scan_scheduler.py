@@ -86,6 +86,7 @@ def test_build_scheduler_status_snapshot_marks_blocked_when_config_missing() -> 
     assert snapshot.enabled is True
     assert snapshot.running is False
     assert snapshot.interval_minutes == 10
+    assert snapshot.jitter_seconds == 0
     assert snapshot.last_status == "blocked"
     assert snapshot.last_error_message == "management source 配置不完整，自动扫描未启动"
 
@@ -307,12 +308,14 @@ def test_get_default_management_source_includes_scheduler_status() -> None:
         AUTHTRACE_MANAGEMENT_TOKEN="secret",
         AUTHTRACE_SCHEDULER_ENABLED=True,
         AUTHTRACE_SCHEDULER_INTERVAL_MINUTES=20,
+        AUTHTRACE_SCHEDULER_JITTER_SECONDS=45,
     )
     scheduler = AuthFileScanScheduler(settings=settings, session_factory=session_factory)
     scheduler.get_status_snapshot = lambda: SchedulerStatusSnapshot(
         enabled=True,
         running=True,
         interval_minutes=20,
+        jitter_seconds=45,
         next_run_at=datetime(2026, 5, 2, 4, 30, tzinfo=timezone.utc),
         last_started_at=datetime(2026, 5, 2, 4, 0, tzinfo=timezone.utc),
         last_finished_at=datetime(2026, 5, 2, 4, 5, tzinfo=timezone.utc),
@@ -339,6 +342,7 @@ def test_get_default_management_source_includes_scheduler_status() -> None:
     assert payload["scheduler_enabled"] is True
     assert payload["scheduler_running"] is True
     assert payload["scheduler_interval_minutes"] == 20
+    assert payload["scheduler_jitter_seconds"] == 45
     assert payload["scheduler_next_run_at"] == "2026-05-02T04:30:00Z"
     assert payload["scheduler_last_started_at"] == "2026-05-02T04:00:00Z"
     assert payload["scheduler_last_finished_at"] == "2026-05-02T04:05:00Z"

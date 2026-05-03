@@ -274,6 +274,7 @@ export interface DefaultManagementSourceResponse {
   scheduler_enabled: boolean;
   scheduler_running: boolean;
   scheduler_interval_minutes: number;
+  scheduler_jitter_seconds: number;
   scheduler_next_run_at: string | null;
   scheduler_last_started_at: string | null;
   scheduler_last_finished_at: string | null;

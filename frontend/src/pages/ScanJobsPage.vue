@@ -249,10 +249,14 @@ function schedulerSummary() {
   }
 
   const intervalText = `每 ${formatCount(source.value.scheduler_interval_minutes)} 分钟`;
+  const jitterText =
+    source.value.scheduler_jitter_seconds > 0
+      ? `随机延迟 0-${formatCount(source.value.scheduler_jitter_seconds)} 秒`
+      : "无随机延迟";
   const nextRunText = source.value.scheduler_next_run_at
     ? `下次 ${formatDateTime(source.value.scheduler_next_run_at)}`
     : "暂无下次执行时间";
-  return `${intervalText} / ${nextRunText}`;
+  return `${intervalText} / ${jitterText} / ${nextRunText}`;
 }
 
 function schedulerLastResult() {
@@ -425,6 +429,11 @@ onMounted(() => {
             <div class="status-stack">
               <StatusPill :tone="schedulerTone()" :text="schedulerStatusText()" />
               <StatusPill tone="muted" :text="`${source.scheduler_interval_minutes} min`" />
+              <StatusPill
+                v-if="source.scheduler_jitter_seconds > 0"
+                tone="muted"
+                :text="`jitter ${source.scheduler_jitter_seconds}s`"
+              />
             </div>
             <p class="subtle-line">{{ schedulerSummary() }}</p>
             <p class="subtle-line">{{ schedulerLastResult() }}</p>

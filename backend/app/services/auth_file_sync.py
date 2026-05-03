@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -190,6 +191,8 @@ async def _scan_usage_for_eligible_accounts(
         weekly_threshold=weekly_threshold,
         short_threshold=short_threshold,
         concurrency=settings.management_probe_concurrency,
+        delay_min_seconds=settings.management_probe_delay_min_seconds,
+        delay_max_seconds=settings.management_probe_delay_max_seconds,
     )
 
     for probe_result in probe_results:
@@ -261,11 +264,15 @@ async def _probe_eligible_accounts(
     weekly_threshold: Decimal,
     short_threshold: Decimal,
     concurrency: int,
+    delay_min_seconds: float,
+    delay_max_seconds: float,
 ) -> list[ProbeExecutionResult]:
     semaphore = asyncio.Semaphore(concurrency)
 
     async def _run_probe(synced: SyncedAuthFile) -> ProbeExecutionResult:
         async with semaphore:
+            if delay_max_seconds > 0:
+                await asyncio.sleep(random.uniform(delay_min_seconds, delay_max_seconds))
             checked_at = _utcnow()
             result = await _probe_account_usage(
                 client,

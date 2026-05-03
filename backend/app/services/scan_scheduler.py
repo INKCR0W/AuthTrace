@@ -26,6 +26,7 @@ class SchedulerStatusSnapshot:
     enabled: bool
     running: bool
     interval_minutes: int
+    jitter_seconds: int
     next_run_at: datetime | None = None
     last_started_at: datetime | None = None
     last_finished_at: datetime | None = None
@@ -38,6 +39,7 @@ def build_scheduler_status_snapshot(settings: Settings) -> SchedulerStatusSnapsh
         enabled=settings.scheduler_enabled,
         running=False,
         interval_minutes=settings.scheduler_interval_minutes,
+        jitter_seconds=settings.scheduler_jitter_seconds,
     )
     if settings.scheduler_enabled and not settings.management_is_configured:
         snapshot.last_status = "blocked"
@@ -79,12 +81,17 @@ class AuthFileScanScheduler:
             coalesce=True,
             max_instances=1,
             misfire_grace_time=60,
+            jitter=self.settings.scheduler_jitter_seconds or None,
         )
         self.scheduler.start()
         self.status.running = True
         self.status.last_error_message = None
         self._refresh_next_run_at()
-        logger.info("自动扫描已启动，间隔 %s 分钟", self.settings.scheduler_interval_minutes)
+        logger.info(
+            "自动扫描已启动，间隔 %s 分钟，随机延迟 0-%s 秒",
+            self.settings.scheduler_interval_minutes,
+            self.settings.scheduler_jitter_seconds,
+        )
 
     def shutdown(self) -> None:
         if not self.scheduler.running:
@@ -103,6 +110,7 @@ class AuthFileScanScheduler:
             enabled=self.status.enabled,
             running=self.status.running,
             interval_minutes=self.status.interval_minutes,
+            jitter_seconds=self.status.jitter_seconds,
             next_run_at=self.status.next_run_at,
             last_started_at=self.status.last_started_at,
             last_finished_at=self.status.last_finished_at,

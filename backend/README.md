@@ -36,7 +36,14 @@ uv run uvicorn app.main:app --reload
 
 - `AUTHTRACE_SCHEDULER_ENABLED=true` 时，服务启动后会按固定间隔自动触发 `/api/v1/sync/auth-files`
 - `AUTHTRACE_SCHEDULER_INTERVAL_MINUTES` 用于控制扫描间隔，默认 `15`
+- `AUTHTRACE_SCHEDULER_JITTER_SECONDS` 用于给自动扫描触发时间增加 `0` 到配置值之间的随机延迟，默认 `0`
 - 若未配置完整管理端地址或 token，自动扫描不会启动，扫描任务页会显示阻塞原因
+
+usage 探测节流配置：
+
+- `AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY` 控制同一轮扫描里同时探测 usage 的账号数，默认 `1`
+- `AUTHTRACE_MANAGEMENT_PROBE_DELAY_MIN_SECONDS` / `AUTHTRACE_MANAGEMENT_PROBE_DELAY_MAX_SECONDS` 控制每个账号探测前的随机等待范围，默认均为 `0`
+- 若担心管理端风控，建议保持并发为 `1`，再按需要设置例如 `1` 到 `5` 秒的账号级随机等待
 
 管理端请求稳定性配置：
 

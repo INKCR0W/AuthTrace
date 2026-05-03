@@ -36,9 +36,18 @@ class Settings(BaseSettings):
         default=1.0,
         alias="AUTHTRACE_MANAGEMENT_RETRY_BACKOFF_SECONDS",
     )
-    management_probe_concurrency: int = Field(default=4, alias="AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY")
+    management_probe_concurrency: int = Field(default=1, alias="AUTHTRACE_MANAGEMENT_PROBE_CONCURRENCY")
+    management_probe_delay_min_seconds: float = Field(
+        default=0.0,
+        alias="AUTHTRACE_MANAGEMENT_PROBE_DELAY_MIN_SECONDS",
+    )
+    management_probe_delay_max_seconds: float = Field(
+        default=0.0,
+        alias="AUTHTRACE_MANAGEMENT_PROBE_DELAY_MAX_SECONDS",
+    )
     scheduler_enabled: bool = Field(default=False, alias="AUTHTRACE_SCHEDULER_ENABLED")
     scheduler_interval_minutes: int = Field(default=15, alias="AUTHTRACE_SCHEDULER_INTERVAL_MINUTES")
+    scheduler_jitter_seconds: int = Field(default=0, alias="AUTHTRACE_SCHEDULER_JITTER_SECONDS")
     management_user_agent: str = Field(
         default="AuthTrace/0.1 (+https://local.authtrace)",
         alias="AUTHTRACE_MANAGEMENT_USER_AGENT",
@@ -116,7 +125,12 @@ class Settings(BaseSettings):
             raise ValueError("quota threshold must be between 0 and 100")
         return value
 
-    @field_validator("management_timeout_seconds", "management_retry_backoff_seconds")
+    @field_validator(
+        "management_timeout_seconds",
+        "management_retry_backoff_seconds",
+        "management_probe_delay_min_seconds",
+        "management_probe_delay_max_seconds",
+    )
     @classmethod
     def validate_non_negative_seconds(cls, value: float) -> float:
         if value < 0:
@@ -137,11 +151,27 @@ class Settings(BaseSettings):
             raise ValueError("management probe concurrency must be at least 1")
         return value
 
+    @field_validator("management_probe_delay_max_seconds")
+    @classmethod
+    def validate_probe_delay_range(cls, value: float, info: object) -> float:
+        data = getattr(info, "data", {})
+        min_value = data.get("management_probe_delay_min_seconds", 0.0)
+        if value < min_value:
+            raise ValueError("management probe delay max seconds must be greater than or equal to min seconds")
+        return value
+
     @field_validator("scheduler_interval_minutes")
     @classmethod
     def validate_scheduler_interval_minutes(cls, value: int) -> int:
         if value < 1:
             raise ValueError("scheduler interval minutes must be at least 1")
+        return value
+
+    @field_validator("scheduler_jitter_seconds")
+    @classmethod
+    def validate_scheduler_jitter_seconds(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("scheduler jitter seconds must be greater than or equal to 0")
         return value
 
     @property
