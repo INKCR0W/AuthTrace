@@ -1,8 +1,15 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${AUTHTRACE_DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${AUTHTRACE_DOCKER_LOG_MAX_FILE:-3}"
+
 services:
   postgres:
     image: postgres:16
     container_name: authtrace-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-authtrace}"
       POSTGRES_USER: "${POSTGRES_USER:-authtrace}"
@@ -22,6 +29,7 @@ services:
       context: ./backend
     container_name: authtrace-backend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +76,7 @@ services:
       context: ./frontend
     container_name: authtrace-frontend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy

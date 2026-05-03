@@ -20,3 +20,4 @@ backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
 backend/alembic/versions/__pycache__/
+backups/
