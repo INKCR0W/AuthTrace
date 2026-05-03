@@ -16,6 +16,7 @@ from app.schemas.research import (
     ResearchCombinationBreakdownItem,
     ResearchCurrentSignalBaseline,
     ResearchCurrentSignalGroupBreakdownItem,
+    ResearchHistoricalReplayBreakdownItem,
     ResearchCurrentSignalSample,
     ResearchEventSample,
     ResearchHourlyDistributionPoint,
@@ -44,6 +45,7 @@ def get_research_overview_api(
     current_match_level: str | None = Query(default=None),
     current_signal_min_streak: int | None = Query(default=None, ge=1, le=20),
     current_historical_gap_bucket: str | None = Query(default=None),
+    current_historical_event_id: int | None = Query(default=None, ge=1),
 ) -> ResearchOverviewResponse:
     if current_signal_key is not None and current_signal_key not in RESEARCH_SIGNAL_KEYS:
         raise HTTPException(
@@ -103,6 +105,7 @@ def get_research_overview_api(
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
         current_historical_gap_bucket=current_historical_gap_bucket,
+        current_historical_event_id=current_historical_event_id,
     )
     return ResearchOverviewResponse(
         window_days=overview.window_days,
@@ -177,6 +180,10 @@ def get_research_overview_api(
             historical_match_gap_breakdown=[
                 ResearchBucketCount.model_validate(item)
                 for item in overview.current_signal_baseline.historical_match_gap_breakdown
+            ],
+            historical_replay_breakdown=[
+                ResearchHistoricalReplayBreakdownItem.model_validate(item)
+                for item in overview.current_signal_baseline.historical_replay_breakdown
             ],
             current_signal_group_breakdown=[
                 ResearchCurrentSignalGroupBreakdownItem.model_validate(item)

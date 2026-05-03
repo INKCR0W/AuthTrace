@@ -181,6 +181,23 @@ class ResearchCurrentSignalGroupBreakdownItem:
 
 
 @dataclass(slots=True)
+class ResearchHistoricalReplayBreakdownItem:
+    event_id: int
+    event_account_id: int
+    event_account_name: str
+    event_time: datetime
+    historical_best_pattern: str
+    historical_gap_bucket: str
+    historical_gap_label: str
+    historical_gap_minutes: int
+    matched_current_accounts: int
+    matched_current_rate: float
+    exact_match_accounts: int
+    covered_match_accounts: int
+    partial_overlap_accounts: int
+
+
+@dataclass(slots=True)
 class ResearchCurrentSignalBaseline:
     observed_accounts: int
     signal_accounts: int
@@ -189,6 +206,7 @@ class ResearchCurrentSignalBaseline:
     signal_streak_breakdown: list[ResearchBucketCount]
     historical_match_breakdown: list[ResearchBucketCount]
     historical_match_gap_breakdown: list[ResearchBucketCount]
+    historical_replay_breakdown: list[ResearchHistoricalReplayBreakdownItem]
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem]
     top_status_messages: list[ResearchBucketCount]
     recent_samples: list[ResearchCurrentSignalSample]
@@ -219,6 +237,7 @@ class ResearchOverviewFilters:
     current_match_level: str | None = None
     current_signal_min_streak: int | None = None
     current_historical_gap_bucket: str | None = None
+    current_historical_event_id: int | None = None
 
 
 def get_research_overview(
@@ -235,6 +254,7 @@ def get_research_overview(
     current_match_level: str | None = None,
     current_signal_min_streak: int | None = None,
     current_historical_gap_bucket: str | None = None,
+    current_historical_event_id: int | None = None,
 ) -> ResearchOverview:
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=window_days)
@@ -249,6 +269,7 @@ def get_research_overview(
         current_match_level=current_match_level,
         current_signal_min_streak=current_signal_min_streak,
         current_historical_gap_bucket=current_historical_gap_bucket,
+        current_historical_event_id=current_historical_event_id,
     )
     scope_filters = ResearchOverviewFilters(
         provider=provider,
@@ -722,6 +743,10 @@ def _build_current_signal_baseline(
     streak_counter = Counter[str]()
     historical_match_counter = Counter[str]()
     historical_match_gap_counter = Counter[str]()
+    historical_replay_counter = Counter[int]()
+    exact_replay_counter = Counter[int]()
+    covered_replay_counter = Counter[int]()
+    partial_replay_counter = Counter[int]()
     status_counter = Counter[str]()
     signal_group_counter = Counter[tuple[str | None, str | None]]()
     multi_round_group_counter = Counter[tuple[str | None, str | None]]()
@@ -732,6 +757,7 @@ def _build_current_signal_baseline(
         tuple[str | None, str | None],
         list[ResearchCurrentSignalGroupSample],
     ] = {}
+    historical_replay_meta_by_event_id: dict[int, _HistoricalReplayBreakdownMeta] = {}
     samples: list[ResearchCurrentSignalSample] = []
     signal_candidates: list[tuple[Account, list[str], str]] = []
 
@@ -775,6 +801,11 @@ def _build_current_signal_baseline(
             and historical_match.best_gap_bucket != filters.current_historical_gap_bucket
         ):
             continue
+        if (
+            filters.current_historical_event_id is not None
+            and historical_match.best_event_id != filters.current_historical_event_id
+        ):
+            continue
         signal_counter.update(signal_keys)
         pattern_counter[pattern_key] += 1
         signal_group_counter[group_key] += 1
@@ -783,6 +814,33 @@ def _build_current_signal_baseline(
         historical_match_counter[historical_match.level] += 1
         if historical_match.best_gap_bucket is not None:
             historical_match_gap_counter[historical_match.best_gap_bucket] += 1
+        if (
+            historical_match.best_event_id is not None
+            and historical_match.best_event_account_id is not None
+            and historical_match.best_event_account_name is not None
+            and historical_match.best_event_time is not None
+            and historical_match.best_pattern_label is not None
+            and historical_match.best_gap_bucket is not None
+            and historical_match.best_gap_label is not None
+            and historical_match.best_gap_minutes is not None
+        ):
+            historical_replay_counter[historical_match.best_event_id] += 1
+            historical_replay_meta_by_event_id[historical_match.best_event_id] = _HistoricalReplayBreakdownMeta(
+                event_id=historical_match.best_event_id,
+                event_account_id=historical_match.best_event_account_id,
+                event_account_name=historical_match.best_event_account_name,
+                event_time=historical_match.best_event_time,
+                historical_best_pattern=historical_match.best_pattern_label,
+                historical_gap_bucket=historical_match.best_gap_bucket,
+                historical_gap_label=historical_match.best_gap_label,
+                historical_gap_minutes=historical_match.best_gap_minutes,
+            )
+            if historical_match.level == "exact_pattern":
+                exact_replay_counter[historical_match.best_event_id] += 1
+            elif historical_match.level == "covered_pattern":
+                covered_replay_counter[historical_match.best_event_id] += 1
+            elif historical_match.level == "partial_overlap":
+                partial_replay_counter[historical_match.best_event_id] += 1
         if consecutive_signal_snapshots >= 2:
             multi_round_group_counter[group_key] += 1
         if historical_match.level in _HISTORICAL_LIKE_LEVELS:
@@ -875,6 +933,14 @@ def _build_current_signal_baseline(
         signal_streak_breakdown=_build_signal_streak_breakdown(streak_counter),
         historical_match_breakdown=_build_historical_match_breakdown(historical_match_counter),
         historical_match_gap_breakdown=_build_historical_match_gap_breakdown(historical_match_gap_counter),
+        historical_replay_breakdown=_build_historical_replay_breakdown(
+            replay_counter=historical_replay_counter,
+            exact_counter=exact_replay_counter,
+            covered_counter=covered_replay_counter,
+            partial_counter=partial_replay_counter,
+            replay_meta_by_event_id=historical_replay_meta_by_event_id,
+            signal_accounts=len(samples),
+        ),
         current_signal_group_breakdown=_build_current_signal_group_breakdown(
             observed_group_counter=observed_group_counter,
             signal_group_counter=signal_group_counter,
@@ -1011,6 +1077,58 @@ def _build_historical_match_gap_breakdown(counter: Counter[str]) -> list[Researc
     if not any(counter.values()):
         return []
     return _build_previous_gap_band_counts(counter)
+
+
+def _build_historical_replay_breakdown(
+    *,
+    replay_counter: Counter[int],
+    exact_counter: Counter[int],
+    covered_counter: Counter[int],
+    partial_counter: Counter[int],
+    replay_meta_by_event_id: dict[int, _HistoricalReplayBreakdownMeta],
+    signal_accounts: int,
+) -> list[ResearchHistoricalReplayBreakdownItem]:
+    items: list[ResearchHistoricalReplayBreakdownItem] = []
+
+    for event_id, matched_current_accounts in replay_counter.items():
+        replay_meta = replay_meta_by_event_id.get(event_id)
+        if replay_meta is None:
+            continue
+
+        items.append(
+            ResearchHistoricalReplayBreakdownItem(
+                event_id=event_id,
+                event_account_id=replay_meta.event_account_id,
+                event_account_name=replay_meta.event_account_name,
+                event_time=replay_meta.event_time,
+                historical_best_pattern=replay_meta.historical_best_pattern,
+                historical_gap_bucket=replay_meta.historical_gap_bucket,
+                historical_gap_label=replay_meta.historical_gap_label,
+                historical_gap_minutes=replay_meta.historical_gap_minutes,
+                matched_current_accounts=matched_current_accounts,
+                matched_current_rate=_to_rate_percent(
+                    numerator=matched_current_accounts,
+                    denominator=signal_accounts,
+                ),
+                exact_match_accounts=exact_counter.get(event_id, 0),
+                covered_match_accounts=covered_counter.get(event_id, 0),
+                partial_overlap_accounts=partial_counter.get(event_id, 0),
+            )
+        )
+
+    return sorted(
+        items,
+        key=lambda item: (
+            -item.matched_current_accounts,
+            -item.exact_match_accounts,
+            -item.covered_match_accounts,
+            -item.partial_overlap_accounts,
+            _previous_gap_bucket_sort_key(item.historical_gap_bucket),
+            item.historical_gap_minutes,
+            item.event_account_name,
+            -item.event_id,
+        ),
+    )[:5]
 
 
 def _build_current_signal_group_breakdown(
@@ -1204,6 +1322,18 @@ class _HistoricalSignalMatchResult:
     best_gap_bucket: str | None
     best_gap_label: str | None
     best_gap_minutes: int | None
+
+
+@dataclass(slots=True)
+class _HistoricalReplayBreakdownMeta:
+    event_id: int
+    event_account_id: int
+    event_account_name: str
+    event_time: datetime
+    historical_best_pattern: str
+    historical_gap_bucket: str
+    historical_gap_label: str
+    historical_gap_minutes: int
 
 
 @dataclass(slots=True)

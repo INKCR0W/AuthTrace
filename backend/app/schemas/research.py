@@ -181,6 +181,24 @@ class ResearchCurrentSignalGroupBreakdownItem(BaseModel):
     top_historical_like_samples: list[ResearchCurrentSignalGroupSample] = Field(default_factory=list)
 
 
+class ResearchHistoricalReplayBreakdownItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: int
+    event_account_id: int
+    event_account_name: str
+    event_time: datetime
+    historical_best_pattern: str
+    historical_gap_bucket: str
+    historical_gap_label: str
+    historical_gap_minutes: int
+    matched_current_accounts: int
+    matched_current_rate: float
+    exact_match_accounts: int
+    covered_match_accounts: int
+    partial_overlap_accounts: int
+
+
 class ResearchCurrentSignalBaseline(BaseModel):
     observed_accounts: int
     signal_accounts: int
@@ -189,6 +207,7 @@ class ResearchCurrentSignalBaseline(BaseModel):
     signal_streak_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_match_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
     historical_match_gap_breakdown: list[ResearchBucketCount] = Field(default_factory=list)
+    historical_replay_breakdown: list[ResearchHistoricalReplayBreakdownItem] = Field(default_factory=list)
     current_signal_group_breakdown: list[ResearchCurrentSignalGroupBreakdownItem] = Field(default_factory=list)
     top_status_messages: list[ResearchBucketCount] = Field(default_factory=list)
     recent_samples: list[ResearchCurrentSignalSample] = Field(default_factory=list)

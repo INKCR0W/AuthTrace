@@ -186,6 +186,22 @@ export interface ResearchCurrentSignalGroupBreakdownItem {
   top_historical_like_samples: ResearchCurrentSignalGroupSample[];
 }
 
+export interface ResearchHistoricalReplayBreakdownItem {
+  event_id: number;
+  event_account_id: number;
+  event_account_name: string;
+  event_time: string;
+  historical_best_pattern: string;
+  historical_gap_bucket: string;
+  historical_gap_label: string;
+  historical_gap_minutes: number;
+  matched_current_accounts: number;
+  matched_current_rate: number;
+  exact_match_accounts: number;
+  covered_match_accounts: number;
+  partial_overlap_accounts: number;
+}
+
 export interface ResearchCurrentSignalBaseline {
   observed_accounts: number;
   signal_accounts: number;
@@ -194,6 +210,7 @@ export interface ResearchCurrentSignalBaseline {
   signal_streak_breakdown: ResearchBucketCount[];
   historical_match_breakdown: ResearchBucketCount[];
   historical_match_gap_breakdown: ResearchBucketCount[];
+  historical_replay_breakdown: ResearchHistoricalReplayBreakdownItem[];
   current_signal_group_breakdown: ResearchCurrentSignalGroupBreakdownItem[];
   top_status_messages: ResearchBucketCount[];
   recent_samples: ResearchCurrentSignalSample[];

@@ -13,6 +13,7 @@ import type {
   ResearchCurrentSignalSample,
   ResearchCurrentSignalGroupSample,
   ResearchEventSample,
+  ResearchHistoricalReplayBreakdownItem,
   ResearchOverviewResponse,
 } from "@/types/api";
 
@@ -77,6 +78,7 @@ const filters = reactive({
   currentMatchLevel: "",
   currentSignalMinStreak: "",
   currentHistoricalGapBucket: "",
+  currentHistoricalEventId: "",
 });
 
 interface ResearchRouteState {
@@ -91,6 +93,7 @@ interface ResearchRouteState {
   currentMatchLevel: string;
   currentSignalMinStreak: string;
   currentHistoricalGapBucket: string;
+  currentHistoricalEventId: string;
 }
 
 const researchRouteQueryKeys = [
@@ -105,6 +108,7 @@ const researchRouteQueryKeys = [
   "current_match_level",
   "current_signal_min_streak",
   "current_historical_gap_bucket",
+  "current_historical_event_id",
 ] as const;
 
 const hourlyLabels = computed(() => overview.value?.event_hour_distribution.map((item) => item.label) ?? []);
@@ -137,6 +141,7 @@ const normalizedPre401GapBucket = computed(() => filters.pre401GapBucket.trim())
 const normalizedCurrentMatchLevel = computed(() => filters.currentMatchLevel.trim());
 const normalizedCurrentSignalMinStreak = computed(() => filters.currentSignalMinStreak.trim());
 const normalizedCurrentHistoricalGapBucket = computed(() => filters.currentHistoricalGapBucket.trim());
+const normalizedCurrentHistoricalEventId = computed(() => filters.currentHistoricalEventId.trim());
 const selectedCurrentSignalLabel = computed(() => {
   if (!normalizedCurrentSignalKey.value) {
     return "";
@@ -228,6 +233,52 @@ const selectedCurrentHistoricalGapBucketLabel = computed(() => {
   }
   return pre401GapLabelMap[normalizedCurrentHistoricalGapBucket.value] ?? normalizedCurrentHistoricalGapBucket.value;
 });
+function formatHistoricalReplayOptionLabel(item: ResearchHistoricalReplayBreakdownItem) {
+  if (!item.event_time) {
+    return item.event_account_name;
+  }
+  return `${item.event_account_name} · ${formatDateTime(item.event_time)} · ${item.historical_gap_label}`;
+}
+
+const historicalReplayOptions = computed(() => {
+  const items = overview.value?.current_signal_baseline.historical_replay_breakdown ?? [];
+  if (!normalizedCurrentHistoricalEventId.value) {
+    return items;
+  }
+  if (items.some((item) => String(item.event_id) === normalizedCurrentHistoricalEventId.value)) {
+    return items;
+  }
+  return [
+    {
+      event_id: Number(normalizedCurrentHistoricalEventId.value),
+      event_account_id: Number(normalizedCurrentHistoricalEventId.value),
+      event_account_name: `历史事件 #${normalizedCurrentHistoricalEventId.value}`,
+      event_time: "",
+      historical_best_pattern: "未知模式",
+      historical_gap_bucket: "",
+      historical_gap_label: "未知新鲜度",
+      historical_gap_minutes: 0,
+      matched_current_accounts: 0,
+      matched_current_rate: 0,
+      exact_match_accounts: 0,
+      covered_match_accounts: 0,
+      partial_overlap_accounts: 0,
+    },
+    ...items,
+  ];
+});
+const selectedCurrentHistoricalEventLabel = computed(() => {
+  if (!normalizedCurrentHistoricalEventId.value) {
+    return "";
+  }
+  const matched = historicalReplayOptions.value.find(
+    (item) => String(item.event_id) === normalizedCurrentHistoricalEventId.value,
+  );
+  if (!matched || !matched.event_time) {
+    return `历史事件 #${normalizedCurrentHistoricalEventId.value}`;
+  }
+  return formatHistoricalReplayOptionLabel(matched);
+});
 const hasScopedFilters = computed(
   () =>
     Boolean(
@@ -240,7 +291,8 @@ const hasScopedFilters = computed(
         normalizedPre401GapBucket.value ||
         normalizedCurrentMatchLevel.value ||
         normalizedCurrentSignalMinStreak.value ||
-        normalizedCurrentHistoricalGapBucket.value,
+        normalizedCurrentHistoricalGapBucket.value ||
+        normalizedCurrentHistoricalEventId.value,
     ),
 );
 const scopeSummary = computed(() => {
@@ -276,6 +328,9 @@ const scopeSummary = computed(() => {
   if (selectedCurrentHistoricalGapBucketLabel.value) {
     segments.push(`最佳历史证据=${selectedCurrentHistoricalGapBucketLabel.value}`);
   }
+  if (selectedCurrentHistoricalEventLabel.value) {
+    segments.push(`历史回放=${selectedCurrentHistoricalEventLabel.value}`);
+  }
 
   return segments.length ? segments.join(" / ") : "全部账号";
 });
@@ -285,7 +340,8 @@ const currentSignalScopeHint = computed(() => {
       !selectedCurrentSignalPatternLabel.value &&
       !selectedCurrentMatchLabel.value &&
       !selectedCurrentSignalMinStreakLabel.value &&
-      !selectedCurrentHistoricalGapBucketLabel.value
+      !selectedCurrentHistoricalGapBucketLabel.value &&
+      !selectedCurrentHistoricalEventLabel.value
     ) {
       return "";
     }
@@ -305,6 +361,9 @@ const currentSignalScopeHint = computed(() => {
   }
   if (selectedCurrentHistoricalGapBucketLabel.value) {
     segments.push(`最佳历史证据“${selectedCurrentHistoricalGapBucketLabel.value}”`);
+  }
+  if (selectedCurrentHistoricalEventLabel.value) {
+    segments.push(`历史回放“${selectedCurrentHistoricalEventLabel.value}”`);
   }
   return `当前基线已按${segments.join(" + ")}收窄；下方仍会继续展示这些样本共现的其他信号，便于判断伴随模式。`;
 });
@@ -398,6 +457,22 @@ const leadingHistoricalLikeGroupSummary = computed(() => {
   }
   return `${segments.join("，")}。`;
 });
+const leadingHistoricalReplay = computed(() => {
+  const item = overview.value?.current_signal_baseline.historical_replay_breakdown[0] ?? null;
+  if (!item || item.matched_current_accounts <= 0) {
+    return null;
+  }
+  return item;
+});
+const leadingHistoricalReplaySummary = computed(() => {
+  const baseline = overview.value?.current_signal_baseline;
+  const item = leadingHistoricalReplay.value;
+  if (!baseline || !item || baseline.signal_accounts === 0) {
+    return "";
+  }
+
+  return `${item.event_account_name} 这条历史 401 证据当前被 ${formatCount(item.matched_current_accounts)} / ${formatCount(baseline.signal_accounts)} 个样本复现，可优先按这条历史样本回放。`;
+});
 
 function syncFilters(next: Partial<typeof filters>) {
   if (next.provider !== undefined) {
@@ -429,6 +504,9 @@ function syncFilters(next: Partial<typeof filters>) {
   }
   if (next.currentHistoricalGapBucket !== undefined) {
     filters.currentHistoricalGapBucket = next.currentHistoricalGapBucket;
+  }
+  if (next.currentHistoricalEventId !== undefined) {
+    filters.currentHistoricalEventId = next.currentHistoricalEventId;
   }
 }
 
@@ -485,6 +563,13 @@ function applyCurrentHistoricalGapBucketFilter(gapBucket: string) {
   void loadOverview();
 }
 
+function applyCurrentHistoricalEventFilter(eventId: number | string) {
+  syncFilters({
+    currentHistoricalEventId: String(eventId),
+  });
+  void loadOverview();
+}
+
 function applyScopeFilter(provider: string | null, accountType: string | null) {
   syncFilters({
     provider: provider ?? "",
@@ -519,6 +604,10 @@ function isCurrentMatchLevelFilterActive(matchLevel: string) {
 
 function isCurrentHistoricalGapBucketFilterActive(gapBucket: string) {
   return normalizedCurrentHistoricalGapBucket.value === gapBucket;
+}
+
+function isCurrentHistoricalEventFilterActive(eventId: number | string) {
+  return normalizedCurrentHistoricalEventId.value === String(eventId);
 }
 
 function isScopeFilterActive(provider: string | null, accountType: string | null) {
@@ -568,6 +657,14 @@ function normalizeWindowDayValue(value: string) {
   return WINDOW_DAY_OPTIONS.includes(parsed as (typeof WINDOW_DAY_OPTIONS)[number]) ? parsed : 7;
 }
 
+function normalizePositiveIntegerValue(value: string) {
+  if (!value) {
+    return "";
+  }
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? String(parsed) : "";
+}
+
 function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
   return {
     windowDays: normalizeWindowDayValue(normalizeQueryValue(query.window_days)),
@@ -596,6 +693,7 @@ function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
       normalizeQueryValue(query.current_historical_gap_bucket),
       allowedPre401GapKeys,
     ),
+    currentHistoricalEventId: normalizePositiveIntegerValue(normalizeQueryValue(query.current_historical_event_id)),
   };
 }
 
@@ -612,6 +710,7 @@ function readCurrentRouteState(): ResearchRouteState {
     currentMatchLevel: normalizedCurrentMatchLevel.value,
     currentSignalMinStreak: normalizedCurrentSignalMinStreak.value,
     currentHistoricalGapBucket: normalizedCurrentHistoricalGapBucket.value,
+    currentHistoricalEventId: normalizedCurrentHistoricalEventId.value,
   };
 }
 
@@ -628,6 +727,7 @@ function applyRouteState(state: ResearchRouteState) {
     currentMatchLevel: state.currentMatchLevel,
     currentSignalMinStreak: state.currentSignalMinStreak,
     currentHistoricalGapBucket: state.currentHistoricalGapBucket,
+    currentHistoricalEventId: state.currentHistoricalEventId,
   });
 }
 
@@ -643,7 +743,8 @@ function areRouteStatesEqual(left: ResearchRouteState, right: ResearchRouteState
     left.pre401GapBucket === right.pre401GapBucket &&
     left.currentMatchLevel === right.currentMatchLevel &&
     left.currentSignalMinStreak === right.currentSignalMinStreak &&
-    left.currentHistoricalGapBucket === right.currentHistoricalGapBucket
+    left.currentHistoricalGapBucket === right.currentHistoricalGapBucket &&
+    left.currentHistoricalEventId === right.currentHistoricalEventId
   );
 }
 
@@ -682,6 +783,9 @@ function buildRouteQuery(state: ResearchRouteState): LocationQueryRaw {
   }
   if (state.currentHistoricalGapBucket) {
     query.current_historical_gap_bucket = state.currentHistoricalGapBucket;
+  }
+  if (state.currentHistoricalEventId) {
+    query.current_historical_event_id = state.currentHistoricalEventId;
   }
 
   return query;
@@ -732,6 +836,9 @@ async function loadOverview(options?: { syncRoute?: boolean }) {
         ? Number(normalizedCurrentSignalMinStreak.value)
         : undefined,
       current_historical_gap_bucket: normalizedCurrentHistoricalGapBucket.value || undefined,
+      current_historical_event_id: normalizedCurrentHistoricalEventId.value
+        ? Number(normalizedCurrentHistoricalEventId.value)
+        : undefined,
     });
   } catch (requestError) {
     error.value = requestError instanceof Error ? requestError.message : "加载研究数据失败";
@@ -751,6 +858,7 @@ function resetFilters() {
   filters.currentMatchLevel = "";
   filters.currentSignalMinStreak = "";
   filters.currentHistoricalGapBucket = "";
+  filters.currentHistoricalEventId = "";
   void loadOverview();
 }
 
@@ -867,6 +975,28 @@ function currentGroupHistoricalGapSummary(
     return "暂无高贴近历史证据";
   }
   return `${item.top_historical_gap_label} · ${formatCount(item.top_historical_gap_count)} 个样本`;
+}
+
+function historicalReplayBreakdownSummary(item: ResearchHistoricalReplayBreakdownItem) {
+  const segments = [`被 ${formatCount(item.matched_current_accounts)} 个当前样本复现`];
+  if (item.exact_match_accounts > 0) {
+    segments.push(`完全同模式 ${formatCount(item.exact_match_accounts)}`);
+  }
+  if (item.covered_match_accounts > 0) {
+    segments.push(`被覆盖 ${formatCount(item.covered_match_accounts)}`);
+  }
+  if (item.partial_overlap_accounts > 0) {
+    segments.push(`部分重合 ${formatCount(item.partial_overlap_accounts)}`);
+  }
+  return segments.join(" / ");
+}
+
+function historicalReplayEvidenceSummary(item: ResearchHistoricalReplayBreakdownItem) {
+  return [
+    formatDateTime(item.event_time),
+    `前序 ${item.historical_gap_label}`,
+    `贴近当前基线 ${formatPercent(item.matched_current_rate)}`,
+  ].join(" · ");
 }
 
 watch(
@@ -996,6 +1126,23 @@ watch(
           </select>
         </label>
         <label>
+          <span class="subtle-label">历史回放</span>
+          <select
+            v-model="filters.currentHistoricalEventId"
+            class="input-field compact-select"
+            @change="loadOverview"
+          >
+            <option value="">全部历史样本</option>
+            <option
+              v-for="item in historicalReplayOptions"
+              :key="`historical-replay-${item.event_id}`"
+              :value="String(item.event_id)"
+            >
+              {{ formatHistoricalReplayOptionLabel(item) }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">窗口</span>
           <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
             <option :value="7">最近 7 天</option>
@@ -1014,10 +1161,15 @@ watch(
       “当前信号 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
     </p>
     <p
-      v-if="selectedCurrentMatchLabel || selectedCurrentSignalMinStreakLabel || selectedCurrentHistoricalGapBucketLabel"
+      v-if="
+        selectedCurrentMatchLabel ||
+        selectedCurrentSignalMinStreakLabel ||
+        selectedCurrentHistoricalGapBucketLabel ||
+        selectedCurrentHistoricalEventLabel
+      "
       class="subtle-line"
     >
-      “历史贴近 / 连续轮数 / 最佳历史证据”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
+      “历史贴近 / 连续轮数 / 最佳历史证据 / 历史回放”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
     </p>
     <p v-if="selectedPre401SignalLabel || selectedPre401SignalPatternLabel" class="subtle-line">
       “前序信号 / 前序模式”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
@@ -1256,6 +1408,35 @@ watch(
                 {{
                   isCurrentHistoricalGapBucketFilterActive(item.key) ? "已筛到最佳历史证据" : "筛到最佳历史证据"
                 }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="overview.current_signal_baseline.historical_replay_breakdown.length" class="observation-list">
+            <p class="subtle-label">历史回放热点</p>
+            <p v-if="leadingHistoricalReplaySummary" class="subtle-line">
+              {{ leadingHistoricalReplaySummary }}
+            </p>
+            <div
+              v-for="item in overview.current_signal_baseline.historical_replay_breakdown"
+              :key="`historical-replay-${item.event_id}`"
+              class="observation-item observation-item-action"
+            >
+              <div>
+                <RouterLink class="inline-link" :to="`/events/${item.event_id}`">
+                  {{ item.event_account_name }}
+                </RouterLink>
+                <p class="subtle-line">{{ historicalReplayEvidenceSummary(item) }}</p>
+                <p class="subtle-line">{{ historicalReplayBreakdownSummary(item) }}</p>
+                <p class="subtle-line">历史模式：{{ item.historical_best_pattern }}</p>
+              </div>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentHistoricalEventFilterActive(item.event_id)"
+                @click="applyCurrentHistoricalEventFilter(item.event_id)"
+              >
+                {{ isCurrentHistoricalEventFilterActive(item.event_id) ? "已筛到历史回放" : "筛到历史回放" }}
               </button>
             </div>
           </div>

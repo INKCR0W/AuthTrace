@@ -401,6 +401,7 @@ def test_research_overview_api_returns_distribution_and_pre_401_insights() -> No
         "signal_streak_breakdown": [],
         "historical_match_breakdown": [],
         "historical_match_gap_breakdown": [],
+        "historical_replay_breakdown": [],
         "current_signal_group_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
@@ -707,6 +708,7 @@ def test_research_overview_api_applies_provider_and_account_type_filters() -> No
         "signal_streak_breakdown": [],
         "historical_match_breakdown": [],
         "historical_match_gap_breakdown": [],
+        "historical_replay_breakdown": [],
         "current_signal_group_breakdown": [],
         "top_status_messages": [],
         "recent_samples": [],
@@ -2387,6 +2389,23 @@ def test_research_overview_api_scores_current_samples_against_historical_pattern
             "count": 1,
         },
     ]
+    assert baseline["historical_replay_breakdown"] == [
+        {
+            "event_id": 1,
+            "event_account_id": 1,
+            "event_account_name": "Historical-Exact",
+            "event_time": "2026-05-02T11:55:00Z",
+            "historical_best_pattern": "周额度 >= 90% / limit_reached=true / allowed=false / 存在 status_message",
+            "historical_gap_bucket": "lt_15m",
+            "historical_gap_label": "15 分钟内",
+            "historical_gap_minutes": 5,
+            "matched_current_accounts": 3,
+            "matched_current_rate": 75.0,
+            "exact_match_accounts": 1,
+            "covered_match_accounts": 1,
+            "partial_overlap_accounts": 1,
+        }
+    ]
     assert baseline["current_signal_group_breakdown"] == [
         {
             "label": "openai / chatgpt",
@@ -2721,6 +2740,214 @@ def test_research_overview_api_prefers_latest_historical_event_for_same_pattern_
     assert sample["historical_match_gap_bucket"] == "lt_15m"
     assert sample["historical_match_gap_label"] == "15 分钟内"
     assert sample["historical_match_gap_minutes"] == 10
+
+    app.dependency_overrides.clear()
+
+
+def test_research_overview_api_filters_current_baseline_by_historical_event_id() -> None:
+    session_factory = _create_session_factory()
+    base_time = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
+
+    def override_db() -> Generator[Session, None, None]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    settings = Settings(
+        AUTHTRACE_DATABASE_URL="sqlite+pysqlite:///:memory:",
+        AUTHTRACE_MANAGEMENT_BASE_URL="http://localhost:8787",
+        AUTHTRACE_MANAGEMENT_TOKEN="secret",
+    )
+
+    app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_app_settings] = lambda: settings
+
+    with session_factory() as db:
+        source = ManagementSource(
+            source_key="main",
+            source_name="Main Source",
+            base_url="http://localhost:8787",
+            created_at=base_time,
+            updated_at=base_time,
+        )
+        db.add(source)
+        db.flush()
+
+        scan_job = ScanJob(
+            source_id=source.id,
+            trigger_mode="manual",
+            status="success",
+            scan_started_at=base_time,
+            scan_finished_at=base_time,
+            created_at=base_time,
+            updated_at=base_time,
+            total_accounts=4,
+            eligible_accounts=4,
+            scanned_accounts=4,
+            success_accounts=4,
+            failed_accounts=0,
+            new_401_events=2,
+        )
+        db.add(scan_job)
+        db.flush()
+
+        historical_one = Account(
+            source_id=source.id,
+            auth_index="auth-historical-one",
+            name="Historical-One",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=5),
+            last_seen_at=base_time,
+        )
+        historical_two = Account(
+            source_id=source.id,
+            auth_index="auth-historical-two",
+            name="Historical-Two",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=True,
+            current_status_code=401,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=4),
+            last_seen_at=base_time,
+        )
+        current_one = Account(
+            source_id=source.id,
+            auth_index="auth-current-one",
+            name="Current-One",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_weekly_used_percent=Decimal("95.00"),
+            current_allowed=False,
+            current_last_checked_at=base_time,
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        current_two = Account(
+            source_id=source.id,
+            auth_index="auth-current-two",
+            name="Current-Two",
+            provider="openai",
+            account_type="chatgpt",
+            disabled=False,
+            current_is_401=False,
+            current_status_code=200,
+            current_short_used_percent=Decimal("96.00"),
+            current_limit_reached=True,
+            current_last_checked_at=base_time - timedelta(minutes=1),
+            first_seen_at=base_time - timedelta(days=2),
+            last_seen_at=base_time,
+        )
+        db.add_all([historical_one, historical_two, current_one, current_two])
+        db.flush()
+
+        snapshot_one = AccountSnapshot(
+            account_id=historical_one.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(minutes=25),
+            created_at=base_time - timedelta(minutes=25),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            weekly_used_percent=Decimal("94.00"),
+            allowed=False,
+        )
+        snapshot_two = AccountSnapshot(
+            account_id=historical_two.id,
+            scan_job_id=scan_job.id,
+            checked_at=base_time - timedelta(hours=2),
+            created_at=base_time - timedelta(hours=2),
+            snapshot_status="success",
+            probe_status_code=200,
+            is_401=False,
+            short_used_percent=Decimal("95.00"),
+            limit_reached=True,
+        )
+        db.add_all([snapshot_one, snapshot_two])
+        db.flush()
+
+        db.add_all(
+            [
+                AccountEvent(
+                    account_id=historical_one.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=20),
+                    related_snapshot_id=snapshot_one.id,
+                    previous_snapshot_id=snapshot_one.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=20),
+                ),
+                AccountEvent(
+                    account_id=historical_two.id,
+                    event_type="became_401",
+                    event_time=base_time - timedelta(minutes=10),
+                    related_snapshot_id=snapshot_two.id,
+                    previous_snapshot_id=snapshot_two.id,
+                    from_status_code=200,
+                    to_status_code=401,
+                    from_is_401=False,
+                    to_is_401=True,
+                    from_disabled=False,
+                    to_disabled=False,
+                    created_at=base_time - timedelta(minutes=10),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = asyncio.run(
+        _request(
+            "GET",
+            "/api/v1/research/overview?window_days=7&current_historical_event_id=2",
+        )
+    )
+
+    assert response.status_code == 200
+    baseline = response.json()["current_signal_baseline"]
+    assert baseline["signal_accounts"] == 1
+    assert baseline["historical_match_breakdown"] == [
+        {
+            "key": "exact_pattern",
+            "label": "与历史前序完全同模式",
+            "count": 1,
+        }
+    ]
+    assert baseline["historical_replay_breakdown"] == [
+        {
+            "event_id": 2,
+            "event_account_id": 2,
+            "event_account_name": "Historical-Two",
+            "event_time": "2026-05-02T11:50:00Z",
+            "historical_best_pattern": "短周期 >= 90% / limit_reached=true",
+            "historical_gap_bucket": "1h_6h",
+            "historical_gap_label": "1-6 小时",
+            "historical_gap_minutes": 110,
+            "matched_current_accounts": 1,
+            "matched_current_rate": 100.0,
+            "exact_match_accounts": 1,
+            "covered_match_accounts": 0,
+            "partial_overlap_accounts": 0,
+        }
+    ]
+    assert [item["account_name"] for item in baseline["recent_samples"]] == ["Current-Two"]
+    assert baseline["recent_samples"][0]["historical_match_event_id"] == 2
+    assert baseline["recent_samples"][0]["historical_match_event_account_name"] == "Historical-Two"
 
     app.dependency_overrides.clear()
 
