@@ -1404,177 +1404,213 @@ watch(
 
 <template>
   <section class="page-section">
-    <div class="section-heading">
+    <div class="section-heading research-heading">
       <div>
         <p class="section-kicker">研究视图</p>
         <h2>围绕 401 前置信号的样本归因</h2>
       </div>
-      <div class="filter-actions">
-        <label>
-          <span class="subtle-label">Provider</span>
-          <input
-            v-model="filters.provider"
-            class="input-field"
-            placeholder="例如 openai"
-            @keyup.enter="loadOverview"
-          />
-        </label>
-        <label>
-          <span class="subtle-label">类型</span>
-          <input
-            v-model="filters.accountType"
-            class="input-field"
-            placeholder="例如 chatgpt"
-            @keyup.enter="loadOverview"
-          />
-        </label>
-        <label>
-          <span class="subtle-label">当前信号</span>
-          <select v-model="filters.currentSignalKey" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部信号</option>
-            <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="item.key" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">当前消息</span>
-          <select v-model="filters.currentStatusMessage" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部消息</option>
-            <option v-for="item in currentStatusMessageOptions" :key="`current-status-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">当前模式</span>
-          <select v-model="filters.currentSignalPatternKey" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部组合</option>
-            <option v-for="item in currentSignalPatternOptions" :key="`current-pattern-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">并发信号数</span>
-          <select v-model="filters.currentSignalCountBucket" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部</option>
-            <option v-for="item in CURRENT_SIGNAL_COUNT_BUCKET_OPTIONS" :key="`current-count-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">前序信号</span>
-          <select v-model="filters.pre401SignalKey" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部信号</option>
-            <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="`pre-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">前序消息</span>
-          <select v-model="filters.pre401StatusMessage" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部消息</option>
-            <option v-for="item in pre401StatusMessageOptions" :key="`pre-status-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">前序模式</span>
-          <select v-model="filters.pre401SignalPatternKey" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部组合</option>
-            <option v-for="item in pre401SignalPatternOptions" :key="`pre-pattern-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">前序新鲜度</span>
-          <select v-model="filters.pre401GapBucket" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部区间</option>
-            <option v-for="item in PRE_401_GAP_OPTIONS" :key="item.key" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">历史贴近</span>
-          <select v-model="filters.currentMatchLevel" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部贴近度</option>
-            <option v-for="item in CURRENT_MATCH_OPTIONS" :key="item.key" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">连续轮数</span>
-          <select v-model="filters.currentSignalMinStreak" class="input-field compact-select" @change="loadOverview">
-            <option value="">全部</option>
-            <option v-for="item in CURRENT_STREAK_OPTIONS" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">历史高贴近事件数</span>
-          <select
-            v-model="filters.currentHistoricalLikeBucket"
-            class="input-field compact-select"
-            @change="loadOverview"
-          >
-            <option value="">全部区间</option>
-            <option
-              v-for="item in CURRENT_HISTORICAL_LIKE_BUCKET_OPTIONS"
-              :key="item.key"
-              :value="item.key"
+    </div>
+
+    <div class="research-filter-panel">
+      <div class="research-filter-group">
+        <div class="research-filter-group-head">
+          <p class="subtle-label">范围筛选</p>
+          <p class="table-inline-note">控制整个研究页的数据范围。</p>
+        </div>
+        <div class="research-filter-grid research-filter-grid-compact">
+          <label class="research-filter-field">
+            <span class="subtle-label">Provider</span>
+            <input
+              v-model="filters.provider"
+              class="input-field"
+              placeholder="例如 openai"
+              @keyup.enter="loadOverview"
+            />
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">类型</span>
+            <input
+              v-model="filters.accountType"
+              class="input-field"
+              placeholder="例如 chatgpt"
+              @keyup.enter="loadOverview"
+            />
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">窗口</span>
+            <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
+              <option :value="7">最近 7 天</option>
+              <option :value="14">最近 14 天</option>
+              <option :value="30">最近 30 天</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="research-filter-group">
+        <div class="research-filter-group-head">
+          <p class="subtle-label">当前基线</p>
+          <p class="table-inline-note">只影响当前基线、当前组合热点和当前样本。</p>
+        </div>
+        <div class="research-filter-grid">
+          <label class="research-filter-field">
+            <span class="subtle-label">当前信号</span>
+            <select v-model="filters.currentSignalKey" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部信号</option>
+              <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="item.key" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">当前消息</span>
+            <select v-model="filters.currentStatusMessage" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部消息</option>
+              <option v-for="item in currentStatusMessageOptions" :key="`current-status-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">当前模式</span>
+            <select v-model="filters.currentSignalPatternKey" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部组合</option>
+              <option v-for="item in currentSignalPatternOptions" :key="`current-pattern-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">并发信号数</span>
+            <select v-model="filters.currentSignalCountBucket" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部</option>
+              <option v-for="item in CURRENT_SIGNAL_COUNT_BUCKET_OPTIONS" :key="`current-count-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">历史贴近</span>
+            <select v-model="filters.currentMatchLevel" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部贴近度</option>
+              <option v-for="item in CURRENT_MATCH_OPTIONS" :key="item.key" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">连续轮数</span>
+            <select v-model="filters.currentSignalMinStreak" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部</option>
+              <option v-for="item in CURRENT_STREAK_OPTIONS" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">历史高贴近事件数</span>
+            <select
+              v-model="filters.currentHistoricalLikeBucket"
+              class="input-field compact-select"
+              @change="loadOverview"
             >
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">最佳历史证据</span>
-          <select
-            v-model="filters.currentHistoricalGapBucket"
-            class="input-field compact-select"
-            @change="loadOverview"
-          >
-            <option value="">全部区间</option>
-            <option v-for="item in PRE_401_GAP_OPTIONS" :key="`current-gap-${item.key}`" :value="item.key">
-              {{ item.label }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">历史回放</span>
-          <select
-            v-model="filters.currentHistoricalEventId"
-            class="input-field compact-select"
-            @change="loadOverview"
-          >
-            <option value="">全部历史样本</option>
-            <option
-              v-for="item in historicalReplayOptions"
-              :key="`historical-replay-${item.event_id}`"
-              :value="String(item.event_id)"
+              <option value="">全部区间</option>
+              <option
+                v-for="item in CURRENT_HISTORICAL_LIKE_BUCKET_OPTIONS"
+                :key="item.key"
+                :value="item.key"
+              >
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">最佳历史证据</span>
+            <select
+              v-model="filters.currentHistoricalGapBucket"
+              class="input-field compact-select"
+              @change="loadOverview"
             >
-              {{ formatHistoricalReplayOptionLabel(item) }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="subtle-label">窗口</span>
-          <select v-model="windowDays" class="input-field compact-select" @change="loadOverview">
-            <option :value="7">最近 7 天</option>
-            <option :value="14">最近 14 天</option>
-            <option :value="30">最近 30 天</option>
-          </select>
-        </label>
-        <button v-if="hasScopedFilters" class="ghost-button" type="button" @click="resetFilters">清空筛选</button>
-        <button class="ghost-button" type="button" @click="loadOverview">刷新</button>
+              <option value="">全部区间</option>
+              <option v-for="item in PRE_401_GAP_OPTIONS" :key="`current-gap-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field research-filter-field-wide">
+            <span class="subtle-label">历史回放</span>
+            <select
+              v-model="filters.currentHistoricalEventId"
+              class="input-field compact-select"
+              @change="loadOverview"
+            >
+              <option value="">全部历史样本</option>
+              <option
+                v-for="item in historicalReplayOptions"
+                :key="`historical-replay-${item.event_id}`"
+                :value="String(item.event_id)"
+              >
+                {{ formatHistoricalReplayOptionLabel(item) }}
+              </option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="research-filter-group">
+        <div class="research-filter-group-head">
+          <p class="subtle-label">历史前序</p>
+          <p class="table-inline-note">只影响前序证据、分桶和最近 401 样本。</p>
+        </div>
+        <div class="research-filter-grid">
+          <label class="research-filter-field">
+            <span class="subtle-label">前序信号</span>
+            <select v-model="filters.pre401SignalKey" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部信号</option>
+              <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="`pre-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">前序消息</span>
+            <select v-model="filters.pre401StatusMessage" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部消息</option>
+              <option v-for="item in pre401StatusMessageOptions" :key="`pre-status-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">前序模式</span>
+            <select v-model="filters.pre401SignalPatternKey" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部组合</option>
+              <option v-for="item in pre401SignalPatternOptions" :key="`pre-pattern-${item.key}`" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+          <label class="research-filter-field">
+            <span class="subtle-label">前序新鲜度</span>
+            <select v-model="filters.pre401GapBucket" class="input-field compact-select" @change="loadOverview">
+              <option value="">全部区间</option>
+              <option v-for="item in PRE_401_GAP_OPTIONS" :key="item.key" :value="item.key">
+                {{ item.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="research-filter-footer">
+        <div class="research-filter-footer-copy">
+          <p class="subtle-label">筛选操作</p>
+          <p class="table-inline-note">所有筛选会同步写入 URL，方便刷新和跨会话复盘。</p>
+        </div>
+        <div class="research-filter-actions">
+          <button v-if="hasScopedFilters" class="ghost-button" type="button" @click="resetFilters">清空筛选</button>
+          <button class="ghost-button" type="button" @click="loadOverview">刷新</button>
+        </div>
       </div>
     </div>
 
