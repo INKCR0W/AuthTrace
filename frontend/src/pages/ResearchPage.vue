@@ -82,8 +82,10 @@ const filters = reactive({
   provider: "",
   accountType: "",
   currentSignalKey: "",
+  currentStatusMessage: "",
   currentSignalPatternKey: "",
   pre401SignalKey: "",
+  pre401StatusMessage: "",
   pre401SignalPatternKey: "",
   pre401GapBucket: "",
   currentMatchLevel: "",
@@ -98,8 +100,10 @@ interface ResearchRouteState {
   provider: string;
   accountType: string;
   currentSignalKey: string;
+  currentStatusMessage: string;
   currentSignalPatternKey: string;
   pre401SignalKey: string;
+  pre401StatusMessage: string;
   pre401SignalPatternKey: string;
   pre401GapBucket: string;
   currentMatchLevel: string;
@@ -114,8 +118,10 @@ const researchRouteQueryKeys = [
   "provider",
   "account_type",
   "current_signal_key",
+  "current_status_message",
   "current_signal_pattern_key",
   "pre_401_signal_key",
+  "pre_401_status_message",
   "pre_401_signal_pattern_key",
   "pre_401_gap_bucket",
   "current_match_level",
@@ -148,8 +154,10 @@ const gapBandValues = computed(
 const normalizedProvider = computed(() => filters.provider.trim());
 const normalizedAccountType = computed(() => filters.accountType.trim());
 const normalizedCurrentSignalKey = computed(() => filters.currentSignalKey.trim());
+const normalizedCurrentStatusMessage = computed(() => filters.currentStatusMessage.trim());
 const normalizedCurrentSignalPatternKey = computed(() => filters.currentSignalPatternKey.trim());
 const normalizedPre401SignalKey = computed(() => filters.pre401SignalKey.trim());
+const normalizedPre401StatusMessage = computed(() => filters.pre401StatusMessage.trim());
 const normalizedPre401SignalPatternKey = computed(() => filters.pre401SignalPatternKey.trim());
 const normalizedPre401GapBucket = computed(() => filters.pre401GapBucket.trim());
 const normalizedCurrentMatchLevel = computed(() => filters.currentMatchLevel.trim());
@@ -194,6 +202,23 @@ function buildPatternOptions(items: ResearchBucketCount[], selectedKey: string) 
   ];
 }
 
+function buildStatusMessageOptions(items: ResearchBucketCount[], selectedKey: string) {
+  if (!selectedKey) {
+    return items;
+  }
+  if (items.some((item) => item.key === selectedKey)) {
+    return items;
+  }
+  return [
+    {
+      key: selectedKey,
+      label: selectedKey,
+      count: 0,
+    },
+    ...items,
+  ];
+}
+
 const currentSignalPatternOptions = computed(() =>
   buildPatternOptions(
     overview.value?.current_signal_baseline.signal_pattern_breakdown ?? [],
@@ -204,6 +229,18 @@ const pre401SignalPatternOptions = computed(() =>
   buildPatternOptions(
     overview.value?.pre_401_insights.signal_pattern_breakdown ?? [],
     normalizedPre401SignalPatternKey.value,
+  ),
+);
+const currentStatusMessageOptions = computed(() =>
+  buildStatusMessageOptions(
+    overview.value?.current_signal_baseline.top_status_messages ?? [],
+    normalizedCurrentStatusMessage.value,
+  ),
+);
+const pre401StatusMessageOptions = computed(() =>
+  buildStatusMessageOptions(
+    overview.value?.pre_401_insights.top_status_messages ?? [],
+    normalizedPre401StatusMessage.value,
   ),
 );
 const selectedCurrentSignalPatternLabel = computed(() => {
@@ -223,6 +260,24 @@ const selectedPre401SignalPatternLabel = computed(() => {
     (item) => item.key === normalizedPre401SignalPatternKey.value,
   );
   return matched?.label ?? formatPatternLabel(normalizedPre401SignalPatternKey.value);
+});
+const selectedCurrentStatusMessageLabel = computed(() => {
+  if (!normalizedCurrentStatusMessage.value) {
+    return "";
+  }
+  const matched = currentStatusMessageOptions.value.find(
+    (item) => item.key === normalizedCurrentStatusMessage.value,
+  );
+  return matched?.label ?? normalizedCurrentStatusMessage.value;
+});
+const selectedPre401StatusMessageLabel = computed(() => {
+  if (!normalizedPre401StatusMessage.value) {
+    return "";
+  }
+  const matched = pre401StatusMessageOptions.value.find(
+    (item) => item.key === normalizedPre401StatusMessage.value,
+  );
+  return matched?.label ?? normalizedPre401StatusMessage.value;
 });
 const selectedPre401GapBucketLabel = computed(() => {
   if (!normalizedPre401GapBucket.value) {
@@ -309,8 +364,10 @@ const hasScopedFilters = computed(
       normalizedProvider.value ||
         normalizedAccountType.value ||
         normalizedCurrentSignalKey.value ||
+        normalizedCurrentStatusMessage.value ||
         normalizedCurrentSignalPatternKey.value ||
         normalizedPre401SignalKey.value ||
+        normalizedPre401StatusMessage.value ||
         normalizedPre401SignalPatternKey.value ||
         normalizedPre401GapBucket.value ||
         normalizedCurrentMatchLevel.value ||
@@ -332,11 +389,17 @@ const scopeSummary = computed(() => {
   if (selectedCurrentSignalLabel.value) {
     segments.push(`当前信号=${selectedCurrentSignalLabel.value}`);
   }
+  if (selectedCurrentStatusMessageLabel.value) {
+    segments.push(`当前消息=${selectedCurrentStatusMessageLabel.value}`);
+  }
   if (selectedCurrentSignalPatternLabel.value) {
     segments.push(`当前模式=${selectedCurrentSignalPatternLabel.value}`);
   }
   if (selectedPre401SignalLabel.value) {
     segments.push(`前序信号=${selectedPre401SignalLabel.value}`);
+  }
+  if (selectedPre401StatusMessageLabel.value) {
+    segments.push(`前序消息=${selectedPre401StatusMessageLabel.value}`);
   }
   if (selectedPre401SignalPatternLabel.value) {
     segments.push(`前序模式=${selectedPre401SignalPatternLabel.value}`);
@@ -363,7 +426,7 @@ const scopeSummary = computed(() => {
   return segments.length ? segments.join(" / ") : "全部账号";
 });
 const currentSignalScopeHint = computed(() => {
-  if (!selectedCurrentSignalLabel.value) {
+  if (!selectedCurrentSignalLabel.value && !selectedCurrentStatusMessageLabel.value) {
     if (
       !selectedCurrentSignalPatternLabel.value &&
       !selectedCurrentMatchLabel.value &&
@@ -378,6 +441,9 @@ const currentSignalScopeHint = computed(() => {
   const segments: string[] = [];
   if (selectedCurrentSignalLabel.value) {
     segments.push(`当前信号“${selectedCurrentSignalLabel.value}”`);
+  }
+  if (selectedCurrentStatusMessageLabel.value) {
+    segments.push(`当前消息“${selectedCurrentStatusMessageLabel.value}”`);
   }
   if (selectedCurrentSignalPatternLabel.value) {
     segments.push(`当前模式“${selectedCurrentSignalPatternLabel.value}”`);
@@ -398,6 +464,31 @@ const currentSignalScopeHint = computed(() => {
     segments.push(`历史回放“${selectedCurrentHistoricalEventLabel.value}”`);
   }
   return `当前基线已按${segments.join(" + ")}收窄；下方仍会继续展示这些样本共现的其他信号，便于判断伴随模式。`;
+});
+const pre401ScopeHint = computed(() => {
+  if (
+    !selectedPre401SignalLabel.value &&
+    !selectedPre401StatusMessageLabel.value &&
+    !selectedPre401SignalPatternLabel.value &&
+    !selectedPre401GapBucketLabel.value
+  ) {
+    return "";
+  }
+
+  const segments: string[] = [];
+  if (selectedPre401SignalLabel.value) {
+    segments.push(`前序信号“${selectedPre401SignalLabel.value}”`);
+  }
+  if (selectedPre401StatusMessageLabel.value) {
+    segments.push(`前序消息“${selectedPre401StatusMessageLabel.value}”`);
+  }
+  if (selectedPre401SignalPatternLabel.value) {
+    segments.push(`前序模式“${selectedPre401SignalPatternLabel.value}”`);
+  }
+  if (selectedPre401GapBucketLabel.value) {
+    segments.push(`前序新鲜度“${selectedPre401GapBucketLabel.value}”`);
+  }
+  return `历史证据区已按${segments.join(" + ")}收窄；顶部摘要、小时分布与组合热点仍保持全局观察口径。`;
 });
 const dominantCurrentSignalPattern = computed(
   () => overview.value?.current_signal_baseline.signal_pattern_breakdown[0] ?? null,
@@ -516,11 +607,17 @@ function syncFilters(next: Partial<typeof filters>) {
   if (next.currentSignalKey !== undefined) {
     filters.currentSignalKey = next.currentSignalKey;
   }
+  if (next.currentStatusMessage !== undefined) {
+    filters.currentStatusMessage = next.currentStatusMessage;
+  }
   if (next.currentSignalPatternKey !== undefined) {
     filters.currentSignalPatternKey = next.currentSignalPatternKey;
   }
   if (next.pre401SignalKey !== undefined) {
     filters.pre401SignalKey = next.pre401SignalKey;
+  }
+  if (next.pre401StatusMessage !== undefined) {
+    filters.pre401StatusMessage = next.pre401StatusMessage;
   }
   if (next.pre401SignalPatternKey !== undefined) {
     filters.pre401SignalPatternKey = next.pre401SignalPatternKey;
@@ -553,6 +650,13 @@ function applyCurrentSignalFilter(signalKey: string) {
   void loadOverview();
 }
 
+function applyCurrentStatusMessageFilter(statusMessage: string) {
+  syncFilters({
+    currentStatusMessage: statusMessage,
+  });
+  void loadOverview();
+}
+
 function applyCurrentSignalPatternFilter(patternKey: string) {
   syncFilters({
     currentSignalKey: "",
@@ -565,6 +669,13 @@ function applyPre401SignalFilter(signalKey: string) {
   syncFilters({
     pre401SignalKey: signalKey,
     pre401SignalPatternKey: "",
+  });
+  void loadOverview();
+}
+
+function applyPre401StatusMessageFilter(statusMessage: string) {
+  syncFilters({
+    pre401StatusMessage: statusMessage,
   });
   void loadOverview();
 }
@@ -624,12 +735,20 @@ function isCurrentSignalFilterActive(signalKey: string) {
   return normalizedCurrentSignalKey.value === signalKey;
 }
 
+function isCurrentStatusMessageFilterActive(statusMessage: string) {
+  return normalizedCurrentStatusMessage.value === statusMessage;
+}
+
 function isCurrentSignalPatternFilterActive(patternKey: string) {
   return normalizedCurrentSignalPatternKey.value === patternKey;
 }
 
 function isPre401SignalFilterActive(signalKey: string) {
   return normalizedPre401SignalKey.value === signalKey;
+}
+
+function isPre401StatusMessageFilterActive(statusMessage: string) {
+  return normalizedPre401StatusMessage.value === statusMessage;
 }
 
 function isPre401SignalPatternFilterActive(patternKey: string) {
@@ -720,11 +839,13 @@ function buildRouteStateFromQuery(query: LocationQuery): ResearchRouteState {
       normalizeQueryValue(query.current_signal_key),
       allowedCurrentSignalKeys,
     ),
+    currentStatusMessage: normalizeQueryValue(query.current_status_message),
     currentSignalPatternKey: normalizePatternKeyValue(normalizeQueryValue(query.current_signal_pattern_key)),
     pre401SignalKey: normalizeAllowedValue(
       normalizeQueryValue(query.pre_401_signal_key),
       allowedCurrentSignalKeys,
     ),
+    pre401StatusMessage: normalizeQueryValue(query.pre_401_status_message),
     pre401SignalPatternKey: normalizePatternKeyValue(normalizeQueryValue(query.pre_401_signal_pattern_key)),
     pre401GapBucket: normalizeAllowedValue(normalizeQueryValue(query.pre_401_gap_bucket), allowedPre401GapKeys),
     currentMatchLevel: normalizeAllowedValue(
@@ -753,8 +874,10 @@ function readCurrentRouteState(): ResearchRouteState {
     provider: normalizedProvider.value,
     accountType: normalizedAccountType.value,
     currentSignalKey: normalizedCurrentSignalKey.value,
+    currentStatusMessage: normalizedCurrentStatusMessage.value,
     currentSignalPatternKey: normalizePatternKeyValue(normalizedCurrentSignalPatternKey.value),
     pre401SignalKey: normalizedPre401SignalKey.value,
+    pre401StatusMessage: normalizedPre401StatusMessage.value,
     pre401SignalPatternKey: normalizePatternKeyValue(normalizedPre401SignalPatternKey.value),
     pre401GapBucket: normalizedPre401GapBucket.value,
     currentMatchLevel: normalizedCurrentMatchLevel.value,
@@ -771,8 +894,10 @@ function applyRouteState(state: ResearchRouteState) {
     provider: state.provider,
     accountType: state.accountType,
     currentSignalKey: state.currentSignalKey,
+    currentStatusMessage: state.currentStatusMessage,
     currentSignalPatternKey: state.currentSignalPatternKey,
     pre401SignalKey: state.pre401SignalKey,
+    pre401StatusMessage: state.pre401StatusMessage,
     pre401SignalPatternKey: state.pre401SignalPatternKey,
     pre401GapBucket: state.pre401GapBucket,
     currentMatchLevel: state.currentMatchLevel,
@@ -789,8 +914,10 @@ function areRouteStatesEqual(left: ResearchRouteState, right: ResearchRouteState
     left.provider === right.provider &&
     left.accountType === right.accountType &&
     left.currentSignalKey === right.currentSignalKey &&
+    left.currentStatusMessage === right.currentStatusMessage &&
     left.currentSignalPatternKey === right.currentSignalPatternKey &&
     left.pre401SignalKey === right.pre401SignalKey &&
+    left.pre401StatusMessage === right.pre401StatusMessage &&
     left.pre401SignalPatternKey === right.pre401SignalPatternKey &&
     left.pre401GapBucket === right.pre401GapBucket &&
     left.currentMatchLevel === right.currentMatchLevel &&
@@ -816,11 +943,17 @@ function buildRouteQuery(state: ResearchRouteState): LocationQueryRaw {
   if (state.currentSignalKey) {
     query.current_signal_key = state.currentSignalKey;
   }
+  if (state.currentStatusMessage) {
+    query.current_status_message = state.currentStatusMessage;
+  }
   if (state.currentSignalPatternKey) {
     query.current_signal_pattern_key = state.currentSignalPatternKey;
   }
   if (state.pre401SignalKey) {
     query.pre_401_signal_key = state.pre401SignalKey;
+  }
+  if (state.pre401StatusMessage) {
+    query.pre_401_status_message = state.pre401StatusMessage;
   }
   if (state.pre401SignalPatternKey) {
     query.pre_401_signal_pattern_key = state.pre401SignalPatternKey;
@@ -883,8 +1016,10 @@ async function loadOverview(options?: { syncRoute?: boolean }) {
       provider: normalizedProvider.value || undefined,
       account_type: normalizedAccountType.value || undefined,
       current_signal_key: normalizedCurrentSignalKey.value || undefined,
+      current_status_message: normalizedCurrentStatusMessage.value || undefined,
       current_signal_pattern_key: normalizedCurrentSignalPatternKey.value || undefined,
       pre_401_signal_key: normalizedPre401SignalKey.value || undefined,
+      pre_401_status_message: normalizedPre401StatusMessage.value || undefined,
       pre_401_signal_pattern_key: normalizedPre401SignalPatternKey.value || undefined,
       pre_401_gap_bucket: normalizedPre401GapBucket.value || undefined,
       current_match_level: normalizedCurrentMatchLevel.value || undefined,
@@ -908,8 +1043,10 @@ function resetFilters() {
   filters.provider = "";
   filters.accountType = "";
   filters.currentSignalKey = "";
+  filters.currentStatusMessage = "";
   filters.currentSignalPatternKey = "";
   filters.pre401SignalKey = "";
+  filters.pre401StatusMessage = "";
   filters.pre401SignalPatternKey = "";
   filters.pre401GapBucket = "";
   filters.currentMatchLevel = "";
@@ -1123,6 +1260,15 @@ watch(
           </select>
         </label>
         <label>
+          <span class="subtle-label">当前消息</span>
+          <select v-model="filters.currentStatusMessage" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部消息</option>
+            <option v-for="item in currentStatusMessageOptions" :key="`current-status-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
           <span class="subtle-label">当前模式</span>
           <select v-model="filters.currentSignalPatternKey" class="input-field compact-select" @change="loadOverview">
             <option value="">全部组合</option>
@@ -1136,6 +1282,15 @@ watch(
           <select v-model="filters.pre401SignalKey" class="input-field compact-select" @change="loadOverview">
             <option value="">全部信号</option>
             <option v-for="item in CURRENT_SIGNAL_OPTIONS" :key="`pre-${item.key}`" :value="item.key">
+              {{ item.label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span class="subtle-label">前序消息</span>
+          <select v-model="filters.pre401StatusMessage" class="input-field compact-select" @change="loadOverview">
+            <option value="">全部消息</option>
+            <option v-for="item in pre401StatusMessageOptions" :key="`pre-status-${item.key}`" :value="item.key">
               {{ item.label }}
             </option>
           </select>
@@ -1238,8 +1393,8 @@ watch(
 
     <p class="subtle-line">当前研究范围：{{ scopeSummary }}</p>
     <p class="subtle-line">当前筛选会写入页面 URL，刷新或复制链接后可直接恢复这组研究视角。</p>
-    <p v-if="selectedCurrentSignalLabel || selectedCurrentSignalPatternLabel" class="subtle-line">
-      “当前信号 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
+    <p v-if="selectedCurrentSignalLabel || selectedCurrentStatusMessageLabel || selectedCurrentSignalPatternLabel" class="subtle-line">
+      “当前信号 / 当前消息 / 当前模式”筛选只作用于“当前基线”“当前组合热点”和“当前样本”区块；历史 401 统计仍按 provider / 类型 / 时间窗口聚合。
     </p>
     <p
       v-if="
@@ -1253,23 +1408,25 @@ watch(
     >
       “历史贴近 / 连续轮数 / 历史高贴近事件数 / 最佳历史证据 / 历史回放”筛选也只作用于“当前基线”“当前组合热点”和“当前样本”区块，用来优先定位更值得继续回放的当前非 401 样本。
     </p>
-    <p v-if="selectedPre401SignalLabel || selectedPre401SignalPatternLabel" class="subtle-line">
-      “前序信号 / 前序模式”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
+    <p v-if="selectedPre401SignalLabel || selectedPre401StatusMessageLabel || selectedPre401SignalPatternLabel" class="subtle-line">
+      “前序信号 / 前序消息 / 前序模式”筛选只作用于“前序信号”“周/短周期分桶”和“最近 401 样本”区块；顶部摘要、小时分布与组合热点仍按 provider / 类型 / 时间窗口聚合。
     </p>
-    <p v-if="selectedPre401GapBucketLabel" class="subtle-line">
-      “前序新鲜度”筛选同样只收窄历史证据区，用来区分更贴近 401 事件的高可信前序样本和间隔过长的弱证据。
+    <p v-if="pre401ScopeHint" class="subtle-line">
+      {{ pre401ScopeHint }}
     </p>
     <p
       v-if="
         selectedCurrentSignalLabel ||
+        selectedCurrentStatusMessageLabel ||
         selectedCurrentSignalPatternLabel ||
         selectedPre401SignalLabel ||
+        selectedPre401StatusMessageLabel ||
         selectedPre401SignalPatternLabel ||
         selectedPre401GapBucketLabel
       "
       class="subtle-line"
     >
-      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前模式 / 前序信号 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
+      “信号对照”和“组合对照”区块只受 provider / 类型 / 时间窗口影响，不跟随“当前信号 / 当前消息 / 当前模式 / 前序信号 / 前序消息 / 前序模式 / 前序新鲜度”局部收窄，便于稳定比较历史样本与当前基线。
     </p>
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="loading && !overview" class="feedback">正在读取研究聚合...</p>
@@ -1378,13 +1535,21 @@ watch(
             </div>
 
             <p v-if="overview.pre_401_insights.top_status_messages.length" class="subtle-label">高频 status_message</p>
-            <p
+            <div
               v-for="item in overview.pre_401_insights.top_status_messages"
               :key="`pre-status-${item.key}`"
-              class="observation-item"
+              class="observation-item observation-item-action"
             >
-              {{ item.label }} · {{ formatCount(item.count) }} 次
-            </p>
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 次</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isPre401StatusMessageFilterActive(item.key)"
+                @click="applyPre401StatusMessageFilter(item.key)"
+              >
+                {{ isPre401StatusMessageFilterActive(item.key) ? "已筛到前序消息" : "筛到前序消息" }}
+              </button>
+            </div>
           </div>
           <p v-else class="feedback">当前窗口和筛选范围内，前序正常样本还没有留下稳定的组合模式或 `status_message`。</p>
         </article>
@@ -1584,13 +1749,21 @@ watch(
             >
               高频 status_message
             </p>
-            <p
+            <div
               v-for="item in overview.current_signal_baseline.top_status_messages"
               :key="`status-${item.key}`"
-              class="observation-item"
+              class="observation-item observation-item-action"
             >
-              {{ item.label }} · {{ formatCount(item.count) }} 个账号
-            </p>
+              <span>{{ item.label }} · {{ formatCount(item.count) }} 个账号</span>
+              <button
+                class="ghost-button compact-button mini-action-button"
+                type="button"
+                :disabled="isCurrentStatusMessageFilterActive(item.key)"
+                @click="applyCurrentStatusMessageFilter(item.key)"
+              >
+                {{ isCurrentStatusMessageFilterActive(item.key) ? "已筛到当前消息" : "筛到当前消息" }}
+              </button>
+            </div>
           </div>
         </article>
       </div>

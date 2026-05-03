@@ -233,8 +233,10 @@ class ResearchOverviewFilters:
     provider: str | None = None
     account_type: str | None = None
     current_signal_key: str | None = None
+    current_status_message: str | None = None
     current_signal_pattern_key: str | None = None
     pre_401_signal_key: str | None = None
+    pre_401_status_message: str | None = None
     pre_401_signal_pattern_key: str | None = None
     pre_401_gap_bucket: str | None = None
     current_match_level: str | None = None
@@ -251,8 +253,10 @@ def get_research_overview(
     provider: str | None = None,
     account_type: str | None = None,
     current_signal_key: str | None = None,
+    current_status_message: str | None = None,
     current_signal_pattern_key: str | None = None,
     pre_401_signal_key: str | None = None,
+    pre_401_status_message: str | None = None,
     pre_401_signal_pattern_key: str | None = None,
     pre_401_gap_bucket: str | None = None,
     current_match_level: str | None = None,
@@ -267,8 +271,10 @@ def get_research_overview(
         provider=provider,
         account_type=account_type,
         current_signal_key=current_signal_key,
+        current_status_message=_normalize_status_message_filter(current_status_message),
         current_signal_pattern_key=current_signal_pattern_key,
         pre_401_signal_key=pre_401_signal_key,
+        pre_401_status_message=_normalize_status_message_filter(pre_401_status_message),
         pre_401_signal_pattern_key=pre_401_signal_pattern_key,
         pre_401_gap_bucket=pre_401_gap_bucket,
         current_match_level=current_match_level,
@@ -297,6 +303,7 @@ def get_research_overview(
     pre_401_event_rows = _filter_event_rows_by_previous_signal(
         event_rows,
         signal_key=filters.pre_401_signal_key,
+        status_message=filters.pre_401_status_message,
         pattern_key=filters.pre_401_signal_pattern_key,
         gap_bucket=filters.pre_401_gap_bucket,
     )
@@ -375,10 +382,11 @@ def _filter_event_rows_by_previous_signal(
     event_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]],
     *,
     signal_key: str | None,
+    status_message: str | None,
     pattern_key: str | None,
     gap_bucket: str | None,
 ) -> list[tuple[AccountEvent, Account, AccountSnapshot | None]]:
-    if signal_key is None and pattern_key is None and gap_bucket is None:
+    if signal_key is None and status_message is None and pattern_key is None and gap_bucket is None:
         return event_rows
 
     filtered_rows: list[tuple[AccountEvent, Account, AccountSnapshot | None]] = []
@@ -393,6 +401,11 @@ def _filter_event_rows_by_previous_signal(
             )
             if previous_gap_bucket != gap_bucket:
                 continue
+        if (
+            status_message is not None
+            and _build_status_message_excerpt(previous_snapshot.status_message) != status_message
+        ):
+            continue
         signal_keys = _extract_snapshot_signal_keys(previous_snapshot)
         if signal_key is not None and signal_key not in signal_keys:
             continue
@@ -787,6 +800,12 @@ def _build_current_signal_baseline(
     historical_candidates = _build_historical_signal_candidates(historical_event_rows)
 
     for account, signal_keys, pattern_key in signal_candidates:
+        status_message_excerpt = _build_status_message_excerpt(account.status_message)
+        if (
+            filters.current_status_message is not None
+            and status_message_excerpt != filters.current_status_message
+        ):
+            continue
         group_key = (account.provider, account.account_type)
         consecutive_signal_snapshots, signal_started_at = _build_current_signal_streak(
             account=account,
@@ -867,9 +886,9 @@ def _build_current_signal_baseline(
                 group_historical_gap_counter.setdefault(group_key, Counter())[
                     historical_match.best_gap_bucket
                 ] += 1
-        status_message_excerpt = _build_status_message_excerpt(account.status_message, limit=80)
-        if status_message_excerpt:
-            status_counter[status_message_excerpt] += 1
+        status_message_bucket = status_message_excerpt
+        if status_message_bucket:
+            status_counter[status_message_bucket] += 1
         current_sample = ResearchCurrentSignalSample(
             account_id=account.id,
             account_name=account.name,
@@ -885,7 +904,7 @@ def _build_current_signal_baseline(
             current_remaining=account.current_remaining,
             current_limit_reached=account.current_limit_reached,
             current_allowed=account.current_allowed,
-            status_message_excerpt=_build_status_message_excerpt(account.status_message),
+            status_message_excerpt=status_message_excerpt,
             signal_labels=[_SIGNAL_LABELS[key] for key in signal_keys],
             consecutive_signal_snapshots=consecutive_signal_snapshots,
             signal_started_at=signal_started_at,
@@ -1626,6 +1645,12 @@ def _build_status_message_excerpt(value: str | None, *, limit: int = 120) -> str
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 1].rstrip() + "…"
+
+
+def _normalize_status_message_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _build_status_message_excerpt(value)
 
 
 def _normalize_status_message_text(value: str) -> str:
