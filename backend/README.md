@@ -8,7 +8,7 @@
 4. 启动 FastAPI
 
 ```powershell
-docker compose up -d
+docker compose up -d postgres
 cd backend
 uv python install 3.14.4
 uv sync --dev
@@ -59,3 +59,24 @@ uv run uvicorn app.main:app --reload
 - 项目默认 Python 版本为 `3.14.4`
 - `POST /api/v1/sync/auth-files` 现在会执行“刷新配置 -> 同步 auth-files -> 探测 eligible 账号 usage -> 写入快照 -> 更新当前态”
 - 浏览器前端联调需要配置 `AUTHTRACE_CORS_ALLOWED_ORIGINS`
+
+## Docker Compose 部署
+
+根目录已补齐 `postgres + backend + frontend` 三个服务的编排。
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+部署入口：
+
+- 前端入口：`http://127.0.0.1:8080`
+- 后端健康检查：`http://127.0.0.1:8000/health`
+- 同源代理后的接口入口：`http://127.0.0.1:8080/api/v1/health`
+
+部署说明：
+
+- 根目录 `.env.example` 用于 `docker compose` 变量注入，需按实际管理端地址和 token 填值
+- 前端生产环境默认走同源 `/api` 代理，不再写死 `127.0.0.1:8000`
+- 后端容器启动时会自动等待数据库可连通并执行 `alembic upgrade head`

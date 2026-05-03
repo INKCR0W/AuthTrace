@@ -11,8 +11,10 @@ import type {
   ScanJobListResponse,
 } from "@/types/api";
 
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const API_BASE_URL = configuredApiBaseUrl
+  ? configuredApiBaseUrl.replace(/\/$/, "")
+  : window.location.origin;
 type QueryValue = string | number | boolean | undefined;
 
 interface RequestOptions {
