@@ -46,7 +46,7 @@ try {
 
     Invoke-DockerCommand `
         -ProjectRoot $ProjectRoot `
-        -Arguments @("exec", "-T", $postgresContainerName, "sh", "-lc", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"') `
+        -Arguments @("exec", $postgresContainerName, "sh", "-lc", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"') `
         -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
 
     if ($PSCmdlet.ShouldProcess($backupFile, "创建 PostgreSQL 备份")) {
@@ -61,7 +61,7 @@ try {
         try {
             Invoke-DockerCommand `
                 -ProjectRoot $ProjectRoot `
-                -Arguments @("exec", "-T", $postgresContainerName, "sh", "-lc", "pg_dump --clean --if-exists --no-owner --no-privileges -U `"`$POSTGRES_USER`" `"`$POSTGRES_DB`" -f '$containerBackupFile'") `
+                -Arguments @("exec", $postgresContainerName, "sh", "-lc", "pg_dump --clean --if-exists --no-owner --no-privileges -U `"`$POSTGRES_USER`" `"`$POSTGRES_DB`" -f '$containerBackupFile'") `
                 -TimeoutSeconds $resolvedCommandTimeoutSeconds | Out-Null
 
             Invoke-DockerCommand `
@@ -78,7 +78,7 @@ try {
         finally {
             Invoke-DockerCommand `
                 -ProjectRoot $ProjectRoot `
-                -Arguments @("exec", "-T", $postgresContainerName, "sh", "-lc", "rm -f '$containerBackupFile'") `
+                -Arguments @("exec", $postgresContainerName, "sh", "-lc", "rm -f '$containerBackupFile'") `
                 -TimeoutSeconds $resolvedCommandTimeoutSeconds `
                 -AllowNonZeroExit | Out-Null
         }

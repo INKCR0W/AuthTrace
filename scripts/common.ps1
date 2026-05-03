@@ -51,7 +51,7 @@ function Join-CommandText {
         [string[]]$ArgumentList
     )
 
-    return ($FilePath, $ArgumentList) -join " "
+    return ((@($FilePath) + $ArgumentList) -join " ")
 }
 
 function ConvertTo-ProcessArguments {
