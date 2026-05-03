@@ -12,14 +12,16 @@ AuthTrace 是一个围绕 `Cliproxy/CLIProxy` 管理端构建的账号状态时�
 
 ## 本地开发
 
-后端本地开发说明见 [backend/README.md](backend/README.md)。如果只需要本地联调数据库：
+后端本地开发说明见 [backend/README.md](backend/README.md)。默认 `docker-compose.yml` 面向部署收口，数据库只在编排内部可达；如果要在宿主机直接运行后端开发服务，需要先准备一个宿主机可访问的开发 PostgreSQL，并在后端 `.env` 中把 `AUTHTRACE_DATABASE_URL` 指向该数据库。
+
+后端本地开发：
 
 ```powershell
-docker compose up -d postgres
 cd backend
 uv python install 3.14.4
 uv sync --dev
 Copy-Item .env.example .env
+# 编辑 .env，把 AUTHTRACE_DATABASE_URL 指向宿主机可访问的开发 PostgreSQL
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```

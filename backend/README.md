@@ -2,20 +2,23 @@
 
 ## 本地启动
 
-1. 启动数据库
+1. 准备一个宿主机可访问的开发 PostgreSQL
 2. 使用 `uv` 创建环境并安装依赖
-3. 执行 Alembic 迁移
-4. 启动 FastAPI
+3. 配置后端 `.env` 中的 `AUTHTRACE_DATABASE_URL`
+4. 执行 Alembic 迁移
+5. 启动 FastAPI
 
 ```powershell
-docker compose up -d postgres
 cd backend
 uv python install 3.14.4
 uv sync --dev
 Copy-Item .env.example .env
+# 编辑 .env，把 AUTHTRACE_DATABASE_URL 指向宿主机可访问的开发 PostgreSQL
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
+
+根目录 `docker-compose.yml` 默认用于部署，`postgres` 不暴露宿主机端口，因此不适合作为宿主机后端进程的直连开发数据库。完整容器化联调时直接在根目录执行 `docker compose up -d --build`。
 
 前端本地联调默认允许：
 
@@ -72,11 +75,11 @@ docker compose up -d --build
 部署入口：
 
 - 前端入口：`http://127.0.0.1:8080`
-- 后端健康检查：`http://127.0.0.1:8000/health`
 - 同源代理后的接口入口：`http://127.0.0.1:8080/api/v1/health`
 
 部署说明：
 
 - 根目录 `.env.example` 用于 `docker compose` 变量注入，需按实际管理端地址和 token 填值
-- 前端生产环境默认走同源 `/api` 代理，不再写死 `127.0.0.1:8000`
+- 默认只有前端绑定到宿主机 `127.0.0.1`；后端和数据库只允许编排内部网络访问
+- 前端生产环境默认走同源 `/api` 代理，并在容器内部访问 `http://backend:8000`
 - 后端容器启动时会自动等待数据库可连通并执行 `alembic upgrade head`
